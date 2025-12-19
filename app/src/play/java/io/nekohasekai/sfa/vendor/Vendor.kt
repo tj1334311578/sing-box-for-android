@@ -12,21 +12,23 @@ import com.google.android.play.core.install.model.InstallStatus
 import com.google.android.play.core.install.model.UpdateAvailability
 import com.google.mlkit.common.MlKitException
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.update.UpdateInfo
+import io.nekohasekai.sfa.update.UpdateState
 
 object Vendor : VendorInterface {
-
     private const val TAG = "Vendor"
-    override fun checkUpdateAvailable(): Boolean {
-        return true
-    }
 
-    override fun checkUpdate(activity: Activity, byUser: Boolean) {
+    override fun checkUpdate(
+        activity: Activity,
+        byUser: Boolean,
+    ) {
         val appUpdateManager = AppUpdateManagerFactory.create(activity)
         val appUpdateInfoTask = appUpdateManager.appUpdateInfo
         appUpdateInfoTask.addOnSuccessListener { appUpdateInfo ->
             when (appUpdateInfo.updateAvailability()) {
                 UpdateAvailability.UPDATE_NOT_AVAILABLE -> {
                     Log.d(TAG, "checkUpdate: not available")
+                    UpdateState.clear()
                     if (byUser) activity.showNoUpdatesDialog()
                 }
 
@@ -41,17 +43,18 @@ object Vendor : VendorInterface {
 
                 UpdateAvailability.UPDATE_AVAILABLE -> {
                     Log.d(TAG, "checkUpdate: available")
+                    UpdateState.hasUpdate.value = true
                     if (appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE)) {
                         appUpdateManager.startUpdateFlow(
                             appUpdateInfo,
                             activity,
-                            AppUpdateOptions.newBuilder(AppUpdateType.FLEXIBLE).build()
+                            AppUpdateOptions.newBuilder(AppUpdateType.FLEXIBLE).build(),
                         )
                     } else if (appUpdateInfo.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)) {
                         appUpdateManager.startUpdateFlow(
                             appUpdateInfo,
                             activity,
-                            AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build()
+                            AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build(),
                         )
                     }
                 }
@@ -78,7 +81,7 @@ object Vendor : VendorInterface {
 
     override fun createQRCodeAnalyzer(
         onSuccess: (String) -> Unit,
-        onFailure: (Exception) -> Unit
+        onFailure: (Exception) -> Unit,
     ): ImageAnalysis.Analyzer? {
         try {
             return MLKitQRCodeAnalyzer(onSuccess, onFailure)
@@ -90,4 +93,19 @@ object Vendor : VendorInterface {
         }
     }
 
+    override fun isPerAppProxyAvailable(): Boolean {
+        // Per-app Proxy is disabled for Play Store builds due to QUERY_ALL_PACKAGES permission restriction
+        return false
+    }
+
+    override fun supportsTrackSelection(): Boolean {
+        // Play Store doesn't support track selection
+        return false
+    }
+
+    override fun checkUpdateAsync(): UpdateInfo? {
+        // Play Store updates are handled by the Play Core library
+        // We can't get version info in the same way as GitHub
+        return null
+    }
 }

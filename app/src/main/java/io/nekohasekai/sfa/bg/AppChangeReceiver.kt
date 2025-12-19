@@ -8,12 +8,14 @@ import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.ui.profileoverride.PerAppProxyActivity
 
 class AppChangeReceiver : BroadcastReceiver() {
-
     companion object {
         private const val TAG = "AppChangeReceiver"
     }
 
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) {
         Log.d(TAG, "onReceive: ${intent.action}")
         checkUpdate(intent)
     }
@@ -23,13 +25,8 @@ class AppChangeReceiver : BroadcastReceiver() {
             Log.d(TAG, "per app proxy disabled")
             return
         }
-        if (intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
-            Log.d(TAG, "skip app update")
-            return
-        }
-        val perAppProxyUpdateOnChange = Settings.perAppProxyUpdateOnChange
-        if (perAppProxyUpdateOnChange == Settings.PER_APP_PROXY_DISABLED) {
-            Log.d(TAG, "update on change disabled")
+        if (!Settings.perAppProxyManagedMode) {
+            Log.d(TAG, "managed mode disabled")
             return
         }
         val packageName = intent.dataString?.substringAfter("package:")
@@ -39,13 +36,12 @@ class AppChangeReceiver : BroadcastReceiver() {
         }
         val isChinaApp = PerAppProxyActivity.scanChinaPackage(packageName)
         Log.d(TAG, "scan china app result for $packageName: $isChinaApp")
-        if ((perAppProxyUpdateOnChange == Settings.PER_APP_PROXY_INCLUDE) xor !isChinaApp) {
-            Settings.perAppProxyList += packageName
-            Log.d(TAG, "added to list")
+        if (isChinaApp) {
+            Settings.perAppProxyManagedList += packageName
+            Log.d(TAG, "added to managed list")
         } else {
-            Settings.perAppProxyList -= packageName
-            Log.d(TAG, "removed from list")
+            Settings.perAppProxyManagedList -= packageName
+            Log.d(TAG, "removed from managed list")
         }
     }
-
 }

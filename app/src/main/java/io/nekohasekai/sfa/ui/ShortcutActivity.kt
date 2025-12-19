@@ -1,6 +1,7 @@
 package io.nekohasekai.sfa.ui
 
 import android.app.Activity
+import android.app.KeyguardManager
 import android.content.Intent
 import android.content.pm.ShortcutManager
 import android.os.Build
@@ -15,38 +16,64 @@ import io.nekohasekai.sfa.bg.ServiceConnection
 import io.nekohasekai.sfa.constant.Status
 
 class ShortcutActivity : Activity(), ServiceConnection.Callback {
-
     private val connection = ServiceConnection(this, this, false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (intent.action == Intent.ACTION_CREATE_SHORTCUT) {
             setResult(
-                RESULT_OK, ShortcutManagerCompat.createShortcutResultIntent(
+                RESULT_OK,
+                ShortcutManagerCompat.createShortcutResultIntent(
                     this,
                     ShortcutInfoCompat.Builder(this, "toggle")
                         .setIntent(
                             Intent(
                                 this,
-                                ShortcutActivity::class.java
-                            ).setAction(Intent.ACTION_MAIN)
+                                ShortcutActivity::class.java,
+                            ).setAction(Intent.ACTION_MAIN),
                         )
                         .setIcon(
                             IconCompat.createWithResource(
                                 this,
-                                R.mipmap.ic_launcher
-                            )
+                                R.mipmap.ic_launcher,
+                            ),
                         )
                         .setShortLabel(getString(R.string.quick_toggle))
-                        .build()
-                )
+                        .build(),
+                ),
             )
             finish()
         } else {
-            connection.connect()
-            if (Build.VERSION.SDK_INT >= 25) {
-                getSystemService<ShortcutManager>()?.reportShortcutUsed("toggle")
+            val keyguardManager = getSystemService<KeyguardManager>()
+            if (keyguardManager?.isKeyguardLocked == true) {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    keyguardManager.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+                        override fun onDismissSucceeded() {
+                            super.onDismissSucceeded()
+                            connectAndToggle()
+                        }
+                        override fun onDismissCancelled() {
+                            super.onDismissCancelled()
+                            finish()
+                        }
+                        override fun onDismissError() {
+                            super.onDismissError()
+                            finish()
+                        }
+                    })
+                } else {
+                    finish()
+                }
+            } else {
+                connectAndToggle()
             }
+        }
+    }
+
+    private fun connectAndToggle() {
+        connection.connect()
+        if (Build.VERSION.SDK_INT >= 25) {
+            getSystemService<ShortcutManager>()?.reportShortcutUsed("toggle")
         }
     }
 
@@ -63,5 +90,4 @@ class ShortcutActivity : Activity(), ServiceConnection.Callback {
         connection.disconnect()
         super.onDestroy()
     }
-
 }
