@@ -6,6 +6,7 @@ import android.net.ProxyInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import io.nekohasekai.libbox.Notification
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.sfa.database.Settings
@@ -15,18 +16,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 
-class VPNService : VpnService(), PlatformInterfaceWrapper {
+class VPNService :
+    VpnService(),
+    PlatformInterfaceWrapper {
     companion object {
         private const val TAG = "VPNService"
     }
 
     private val service = BoxService(this, this)
 
-    override fun onStartCommand(
-        intent: Intent?,
-        flags: Int,
-        startId: Int,
-    ) = service.onStartCommand()
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = service.onStartCommand()
 
     override fun onBind(intent: Intent): IBinder {
         val binder = super.onBind(intent)
@@ -65,6 +64,10 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setMetered(false)
+        }
+
+        if (Settings.allowBypass) {
+            builder.allowBypass()
         }
 
         val inet4Address = options.inet4Address
@@ -132,8 +135,11 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
             if (includePackage.hasNext()) {
                 while (includePackage.hasNext()) {
                     try {
-                        builder.addAllowedApplication(includePackage.next())
-                    } catch (_: NameNotFoundException) {
+                        val nextPackage = includePackage.next()
+                        builder.addAllowedApplication(nextPackage)
+                        Log.d("VPNService", "addAllowedApplication: $nextPackage")
+                    } catch (e: NameNotFoundException) {
+                        Log.e("VPNService", "addAllowedApplication failed", e)
                     }
                 }
             }
@@ -142,8 +148,11 @@ class VPNService : VpnService(), PlatformInterfaceWrapper {
             if (excludePackage.hasNext()) {
                 while (excludePackage.hasNext()) {
                     try {
-                        builder.addDisallowedApplication(excludePackage.next())
-                    } catch (_: NameNotFoundException) {
+                        val nextPackage = excludePackage.next()
+                        builder.addDisallowedApplication(nextPackage)
+                        Log.d("VPNService", "addDisallowedApplication: $nextPackage")
+                    } catch (e: NameNotFoundException) {
+                        Log.e("VPNService", "addDisallowedApplication failed", e)
                     }
                 }
             }

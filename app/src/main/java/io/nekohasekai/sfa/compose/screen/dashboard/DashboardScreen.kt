@@ -1,6 +1,5 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,22 +10,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -34,23 +31,37 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compose.base.UiEvent
-import io.nekohasekai.sfa.compose.util.saveQRCodeToGallery
-import io.nekohasekai.sfa.compose.util.shareQRCodeImage
+import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
+import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
 import kotlinx.coroutines.launch
 
-data class CardRenderItem(
-    val cards: List<CardGroup>,
-    val isRow: Boolean,
-)
+data class CardRenderItem(val cards: List<CardGroup>, val isRow: Boolean)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     serviceStatus: Status = Status.Stopped,
+    showStartFab: Boolean = false,
+    showStatusBar: Boolean = false,
+    onOpenNewProfile: (NewProfileArgs) -> Unit = {},
     viewModel: DashboardViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    OverrideTopBar {
+        TopAppBar(
+            title = { Text(stringResource(R.string.title_dashboard)) },
+            actions = {
+                IconButton(onClick = { viewModel.toggleCardSettingsDialog() }) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = stringResource(R.string.title_others),
+                    )
+                }
+            },
+        )
+    }
 
     // Update service status in ViewModel
     LaunchedEffect(serviceStatus) {
@@ -64,7 +75,7 @@ fun DashboardScreen(
         val note = uiState.deprecatedNotes.first()
         AlertDialog(
             onDismissRequest = { },
-            title = { Text(stringResource(R.string.service_error_title_deprecated_warning)) },
+            title = { Text(stringResource(R.string.error_deprecated_warning)) },
             text = { Text(note.message) },
             confirmButton = {
                 TextButton(onClick = { viewModel.dismissDeprecatedNote() }) {
@@ -72,18 +83,18 @@ fun DashboardScreen(
                 }
             },
             dismissButton =
-                if (!note.migrationLink.isNullOrBlank()) {
-                    {
-                        TextButton(onClick = {
-                            viewModel.sendGlobalEvent(UiEvent.OpenUrl(note.migrationLink))
-                            viewModel.dismissDeprecatedNote()
-                        }) {
-                            Text(stringResource(R.string.service_error_deprecated_warning_documentation))
-                        }
+            if (!note.migrationLink.isNullOrBlank()) {
+                {
+                    TextButton(onClick = {
+                        viewModel.sendGlobalEvent(UiEvent.OpenUrl(note.migrationLink))
+                        viewModel.dismissDeprecatedNote()
+                    }) {
+                        Text(stringResource(R.string.error_deprecated_documentation))
                     }
-                } else {
-                    null
-                },
+                }
+            } else {
+                null
+            },
         )
     }
 
@@ -112,16 +123,18 @@ fun DashboardScreen(
     Box(
         modifier = Modifier.fillMaxSize(),
     ) {
+        val bottomPadding = when {
+            showStartFab -> 88.dp
+            showStatusBar -> 74.dp
+            else -> 0.dp
+        }
         LazyColumn(
             modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding =
-                PaddingValues(
-                    bottom = 88.dp, // Increased to accommodate FAB (56dp height + 32dp padding)
-                ),
+            contentPadding = PaddingValues(bottom = bottomPadding),
         ) {
             // Dynamic dashboard cards
             // Show cards when service is running OR if it's the Profiles card (always available)
@@ -155,8 +168,8 @@ fun DashboardScreen(
                             DashboardCardRenderer(
                                 cardGroup = cardGroup,
                                 cardWidth =
-                                    uiState.cardWidths[cardGroup]
-                                        ?: CardWidth.Full,
+                                uiState.cardWidths[cardGroup]
+                                    ?: CardWidth.Full,
                                 uiState = uiState,
                                 onClashModeSelected = viewModel::selectClashMode,
                                 onSystemProxyToggle = viewModel::toggleSystemProxy,
@@ -179,21 +192,12 @@ fun DashboardScreen(
                                 onHideAddProfileSheet = viewModel::hideAddProfileSheet,
                                 onShowProfilePickerSheet = viewModel::showProfilePickerSheet,
                                 onHideProfilePickerSheet = viewModel::hideProfilePickerSheet,
-                                shareQRCodeImage = { bitmap, name ->
-                                    scope.launch {
-                                        shareQRCodeImage(context, bitmap, name)
-                                    }
-                                },
-                                saveQRCodeToGallery = { bitmap, name ->
-                                    scope.launch {
-                                        saveQRCodeToGallery(context, bitmap, name)
-                                    }
-                                },
+                                onOpenNewProfile = onOpenNewProfile,
                                 commandClient = viewModel.commandClient,
                                 modifier =
-                                    Modifier
-                                        .weight(1f)
-                                        .fillMaxWidth(),
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
                             )
                         }
                     }
@@ -203,8 +207,8 @@ fun DashboardScreen(
                         DashboardCardRenderer(
                             cardGroup = cardGroup,
                             cardWidth =
-                                uiState.cardWidths[cardGroup]
-                                    ?: CardWidth.Full,
+                            uiState.cardWidths[cardGroup]
+                                ?: CardWidth.Full,
                             uiState = uiState,
                             serviceStatus = serviceStatus,
                             onClashModeSelected = viewModel::selectClashMode,
@@ -228,71 +232,13 @@ fun DashboardScreen(
                             onHideAddProfileSheet = viewModel::hideAddProfileSheet,
                             onShowProfilePickerSheet = viewModel::showProfilePickerSheet,
                             onHideProfilePickerSheet = viewModel::hideProfilePickerSheet,
-                            shareQRCodeImage = { bitmap, name ->
-                                scope.launch {
-                                    shareQRCodeImage(context, bitmap, name)
-                                }
-                            },
-                            saveQRCodeToGallery = { bitmap, name ->
-                                scope.launch {
-                                    saveQRCodeToGallery(context, bitmap, name)
-                                }
-                            },
+                            onOpenNewProfile = onOpenNewProfile,
                             commandClient = viewModel.commandClient,
                         )
                     }
                 }
             }
         }
-
-        // FAB
-        AnimatedVisibility(
-            visible = uiState.serviceStatus != Status.Stopping,
-            enter = androidx.compose.animation.scaleIn(),
-            exit = androidx.compose.animation.scaleOut(),
-            modifier =
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp),
-        ) {
-            ServiceControlFAB(
-                status = uiState.serviceStatus,
-                onToggle = { viewModel.toggleService() },
-                enabled = uiState.selectedProfileId != -1L,
-            )
-        }
-    }
-}
-
-@Composable
-fun ServiceControlFAB(
-    status: Status,
-    onToggle: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-) {
-    FloatingActionButton(
-        onClick = { if (enabled) onToggle() },
-        modifier = modifier,
-        containerColor =
-            if (enabled) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant
-            },
-    ) {
-        Icon(
-            imageVector =
-                when (status) {
-                    Status.Started, Status.Starting -> Icons.Default.Stop
-                    else -> Icons.Default.PlayArrow
-                },
-            contentDescription =
-                when (status) {
-                    Status.Started, Status.Starting -> stringResource(R.string.stop)
-                    else -> stringResource(R.string.action_start)
-                },
-        )
     }
 }
 
@@ -357,18 +303,12 @@ fun processCardsForRendering(
  * This function is only relevant when the service is running.
  * Note: Profiles card is always available and should not use this function.
  */
-fun isCardAvailableWhenServiceRunning(
-    cardGroup: CardGroup,
-    uiState: DashboardUiState,
-): Boolean {
-    return when (cardGroup) {
-        CardGroup.ClashMode -> uiState.clashModeVisible
-        CardGroup.UploadTraffic -> uiState.trafficVisible
-        CardGroup.DownloadTraffic -> uiState.trafficVisible
-        CardGroup.Debug -> true // Debug info is always available when service is running
-        CardGroup.Connections -> uiState.trafficVisible
-        CardGroup.SystemProxy -> uiState.systemProxyVisible
-        CardGroup.Profiles -> true // This shouldn't be called for Profiles, but return true for safety
-        CardGroup.Groups -> uiState.hasGroups // Groups card available when groups exist
-    }
+fun isCardAvailableWhenServiceRunning(cardGroup: CardGroup, uiState: DashboardUiState): Boolean = when (cardGroup) {
+    CardGroup.ClashMode -> uiState.clashModeVisible
+    CardGroup.UploadTraffic -> uiState.trafficVisible
+    CardGroup.DownloadTraffic -> uiState.trafficVisible
+    CardGroup.Debug -> true // Debug info is always available when service is running
+    CardGroup.Connections -> uiState.trafficVisible
+    CardGroup.SystemProxy -> uiState.systemProxyVisible
+    CardGroup.Profiles -> true // This shouldn't be called for Profiles, but return true for safety
 }

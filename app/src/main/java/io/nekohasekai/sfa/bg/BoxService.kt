@@ -28,13 +28,13 @@ import io.nekohasekai.libbox.PlatformInterface
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.compose.MainActivity
 import io.nekohasekai.sfa.constant.Action
 import io.nekohasekai.sfa.constant.Alert
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.ktx.hasPermission
-import io.nekohasekai.sfa.ui.MainActivity
 import io.nekohasekai.sfa.vendor.Vendor
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -44,10 +44,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.File
 
-class BoxService(
-    private val service: Service,
-    private val platformInterface: PlatformInterface,
-) : CommandServerHandler {
+class BoxService(private val service: Service, private val platformInterface: PlatformInterface) : CommandServerHandler {
     companion object {
         private const val PROFILE_UPDATE_INTERVAL = 15L * 60 * 1000 // 15 minutes in milliseconds
         private const val TAG = "BoxService"
@@ -81,10 +78,7 @@ class BoxService(
     private var receiverRegistered = false
     private val receiver =
         object : BroadcastReceiver() {
-            override fun onReceive(
-                context: Context,
-                intent: Intent,
-            ) {
+            override fun onReceive(context: Context, intent: Intent) {
                 when (intent.action) {
                     Action.SERVICE_CLOSE -> {
                         stopService()
@@ -137,7 +131,6 @@ class BoxService(
             }
 
             DefaultNetworkMonitor.start()
-            Libbox.setMemoryLimit(!Settings.disableMemoryLimit)
 
             try {
                 commandServer.startOrReloadService(
@@ -146,12 +139,12 @@ class BoxService(
                         autoRedirect = Settings.autoRedirect
                         if (Vendor.isPerAppProxyAvailable() && Settings.perAppProxyEnabled) {
                             val appList = Settings.getEffectivePerAppProxyList()
-                            if (Settings.perAppProxyMode == Settings.PER_APP_PROXY_INCLUDE) {
+                            if (Settings.getEffectivePerAppProxyMode() == Settings.PER_APP_PROXY_INCLUDE) {
                                 includePackage =
-                                    PlatformInterfaceWrapper.StringArray(appList.iterator())
+                                    PlatformInterfaceWrapper.StringArray((appList + Application.application.packageName).iterator())
                             } else {
                                 excludePackage =
-                                    PlatformInterfaceWrapper.StringArray(appList.iterator())
+                                    PlatformInterfaceWrapper.StringArray((appList - Application.application.packageName).iterator())
                             }
                         }
                     },
@@ -169,7 +162,6 @@ class BoxService(
                         android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
                     }
                 if (!service.hasPermission(wifiPermission)) {
-                    closeService()
                     stopAndAlert(Alert.RequestLocationPermission)
                     return
                 }
@@ -229,10 +221,10 @@ class BoxService(
                     autoRedirect = Settings.autoRedirect
                     if (Vendor.isPerAppProxyAvailable() && Settings.perAppProxyEnabled) {
                         val appList = Settings.getEffectivePerAppProxyList()
-                        if (Settings.perAppProxyMode == Settings.PER_APP_PROXY_INCLUDE) {
-                            includePackage = PlatformInterfaceWrapper.StringArray(appList.iterator())
+                        if (Settings.getEffectivePerAppProxyMode() == Settings.PER_APP_PROXY_INCLUDE) {
+                            includePackage = PlatformInterfaceWrapper.StringArray((appList + Application.application.packageName).iterator())
                         } else {
-                            excludePackage = PlatformInterfaceWrapper.StringArray(appList.iterator())
+                            excludePackage = PlatformInterfaceWrapper.StringArray((appList - Application.application.packageName).iterator())
                         }
                     }
                 },
@@ -250,7 +242,6 @@ class BoxService(
                     android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
                 }
             if (!service.hasPermission(wifiPermission)) {
-                closeService()
                 stopAndAlert(Alert.RequestLocationPermission)
                 return
             }
@@ -298,7 +289,7 @@ class BoxService(
             closeService()
             commandServer.apply {
                 close()
-                Seq.destroyRef(refnum)
+//                Seq.destroyRef(refnum)
             }
             Settings.startedByUser = false
             withContext(Dispatchers.Main) {
@@ -316,11 +307,18 @@ class BoxService(
         }
     }
 
-    private suspend fun stopAndAlert(
-        type: Alert,
-        message: String? = null,
-    ) {
+    private suspend fun stopAndAlert(type: Alert, message: String? = null) {
         Settings.startedByUser = false
+        val pfd = fileDescriptor
+        if (pfd != null) {
+            pfd.close()
+            fileDescriptor = null
+        }
+        DefaultNetworkMonitor.stop()
+        if (::commandServer.isInitialized) {
+            closeService()
+            commandServer.close()
+        }
         withContext(Dispatchers.Main) {
             if (receiverRegistered) {
                 service.unregisterReceiver(receiver)
@@ -331,6 +329,7 @@ class BoxService(
                 callback.onServiceAlert(type.ordinal, message)
             }
             status.value = Status.Stopped
+            service.stopSelf()
         }
     }
 
@@ -368,9 +367,7 @@ class BoxService(
         return Service.START_NOT_STICKY
     }
 
-    internal fun onBind(): IBinder {
-        return binder
-    }
+    internal fun onBind(): IBinder = binder
 
     internal fun onDestroy() {
         binder.close()

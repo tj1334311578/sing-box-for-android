@@ -12,16 +12,14 @@ import com.google.android.play.core.install.model.InstallStatus
 import com.google.android.play.core.install.model.UpdateAvailability
 import com.google.mlkit.common.MlKitException
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.compose.screen.qrscan.QRCodeCropArea
 import io.nekohasekai.sfa.update.UpdateInfo
 import io.nekohasekai.sfa.update.UpdateState
 
 object Vendor : VendorInterface {
     private const val TAG = "Vendor"
 
-    override fun checkUpdate(
-        activity: Activity,
-        byUser: Boolean,
-    ) {
+    override fun checkUpdate(activity: Activity, byUser: Boolean) {
         val appUpdateManager = AppUpdateManagerFactory.create(activity)
         val appUpdateInfoTask = appUpdateManager.appUpdateInfo
         appUpdateInfoTask.addOnSuccessListener { appUpdateInfo ->
@@ -82,9 +80,10 @@ object Vendor : VendorInterface {
     override fun createQRCodeAnalyzer(
         onSuccess: (String) -> Unit,
         onFailure: (Exception) -> Unit,
+        onCropArea: ((QRCodeCropArea?) -> Unit)?,
     ): ImageAnalysis.Analyzer? {
         try {
-            return MLKitQRCodeAnalyzer(onSuccess, onFailure)
+            return MLKitQRCodeAnalyzer(onSuccess, onFailure, onCropArea)
         } catch (exception: Exception) {
             if (exception !is MlKitException || exception.errorCode != MlKitException.UNAVAILABLE) {
                 Log.e(TAG, "failed to create MLKitQRCodeAnalyzer", exception)
@@ -93,19 +92,5 @@ object Vendor : VendorInterface {
         }
     }
 
-    override fun isPerAppProxyAvailable(): Boolean {
-        // Per-app Proxy is disabled for Play Store builds due to QUERY_ALL_PACKAGES permission restriction
-        return false
-    }
-
-    override fun supportsTrackSelection(): Boolean {
-        // Play Store doesn't support track selection
-        return false
-    }
-
-    override fun checkUpdateAsync(): UpdateInfo? {
-        // Play Store updates are handled by the Play Core library
-        // We can't get version info in the same way as GitHub
-        return null
-    }
+    override fun checkUpdateAsync(): UpdateInfo? = null
 }

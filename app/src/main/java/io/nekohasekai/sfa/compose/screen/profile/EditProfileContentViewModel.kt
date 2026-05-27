@@ -38,15 +38,10 @@ data class EditProfileContentUiState(
     val profileName: String = "", // Add profile name
 )
 
-class EditProfileContentViewModel(
-    private val profileId: Long,
-    initialProfileName: String = "",
-    initialIsReadOnly: Boolean = false,
-) : ViewModel() {
+class EditProfileContentViewModel(private val profileId: Long, initialIsReadOnly: Boolean = false) : ViewModel() {
     private val _uiState =
         MutableStateFlow(
             EditProfileContentUiState(
-                profileName = initialProfileName,
                 isReadOnly = initialIsReadOnly,
             ),
         )
@@ -56,10 +51,7 @@ class EditProfileContentViewModel(
     private var editor: ManualScrollTextProcessor? = null
     private var configCheckJob: Job? = null
 
-    fun setEditor(
-        textProcessor: ManualScrollTextProcessor,
-        isReadOnly: Boolean = false,
-    ) {
+    fun setEditor(textProcessor: ManualScrollTextProcessor, isReadOnly: Boolean = false) {
         val isNewEditor = editor != textProcessor
         editor = textProcessor
         textProcessor.resumeAutoScroll()
@@ -89,18 +81,12 @@ class EditProfileContentViewModel(
             // Customize text selection to remove Cut and Paste options
             textProcessor.customSelectionActionModeCallback =
                 object : android.view.ActionMode.Callback {
-                    override fun onCreateActionMode(
-                        mode: android.view.ActionMode?,
-                        menu: android.view.Menu?,
-                    ): Boolean {
+                    override fun onCreateActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?): Boolean {
                         // Allow the action mode to be created
                         return true
                     }
 
-                    override fun onPrepareActionMode(
-                        mode: android.view.ActionMode?,
-                        menu: android.view.Menu?,
-                    ): Boolean {
+                    override fun onPrepareActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?): Boolean {
                         // Remove editing-related menu items, keep only Copy and Select All
                         menu?.let { m ->
                             // Remove all editing-related items
@@ -116,10 +102,7 @@ class EditProfileContentViewModel(
                         return true
                     }
 
-                    override fun onActionItemClicked(
-                        mode: android.view.ActionMode?,
-                        item: android.view.MenuItem?,
-                    ): Boolean {
+                    override fun onActionItemClicked(mode: android.view.ActionMode?, item: android.view.MenuItem?): Boolean {
                         // Let the default implementation handle allowed actions (copy, select all)
                         return false
                     }
@@ -227,7 +210,7 @@ class EditProfileContentViewModel(
                             originalContent = content,
                             hasUnsavedChanges = false,
                             isLoading = false,
-                            // Keep profileName and isReadOnly from initial state - no need to update
+                            profileName = loadedProfile.name,
                         )
                     }
                 }
@@ -600,13 +583,12 @@ class EditProfileContentViewModel(
 
     class Factory(
         private val profileId: Long,
-        private val initialProfileName: String = "",
         private val initialIsReadOnly: Boolean = false,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(EditProfileContentViewModel::class.java)) {
-                return EditProfileContentViewModel(profileId, initialProfileName, initialIsReadOnly) as T
+                return EditProfileContentViewModel(profileId, initialIsReadOnly) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class")
         }

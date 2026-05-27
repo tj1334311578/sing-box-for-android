@@ -12,6 +12,7 @@ import io.nekohasekai.sfa.database.Profile
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.database.TypedProfile
+import io.nekohasekai.sfa.utils.AppLifecycleObserver
 import io.nekohasekai.sfa.utils.CommandClient
 import io.nekohasekai.sfa.utils.HTTPClient
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +36,6 @@ enum class CardGroup {
     Connections,
     SystemProxy,
     Profiles,
-    Groups,
 }
 
 enum class CardWidth {
@@ -50,6 +50,9 @@ data class DashboardUiState(
     val selectedProfileName: String? = null,
     val isLoading: Boolean = false,
     val hasGroups: Boolean = false,
+    val groupsCount: Int = 0,
+    val connectionsCount: Int = 0,
+    val serviceStartTime: Long? = null,
     val deprecatedNotes: List<DeprecatedNote> = emptyList(),
     val showDeprecatedDialog: Boolean = false,
     val showAddProfileSheet: Boolean = false,
@@ -98,7 +101,6 @@ data class DashboardUiState(
             CardGroup.SystemProxy,
             CardGroup.ClashMode,
             CardGroup.Profiles,
-            CardGroup.Groups,
         ),
     val cardWidths: Map<CardGroup, CardWidth> =
         mapOf(
@@ -109,20 +111,18 @@ data class DashboardUiState(
             CardGroup.Connections to CardWidth.Half,
             CardGroup.SystemProxy to CardWidth.Full,
             CardGroup.Profiles to CardWidth.Full,
-            CardGroup.Groups to CardWidth.Full,
         ),
     val showCardSettingsDialog: Boolean = false,
 ) {
-    data class DeprecatedNote(
-        val message: String,
-        val migrationLink: String?,
-    )
+    data class DeprecatedNote(val message: String, val migrationLink: String?)
 }
 
 // DashboardViewModel now only uses UiEvent for all events
 // No need for DashboardEvent anymore as all events are handled globally
 
-class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandClient.Handler {
+class DashboardViewModel :
+    BaseViewModel<DashboardUiState, UiEvent>(),
+    CommandClient.Handler {
     private val _serviceStatus = MutableStateFlow(Status.Stopped)
     val serviceStatus: StateFlow<Status> = _serviceStatus.asStateFlow()
 
@@ -143,17 +143,7 @@ class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandCl
 
         // Calculate visible items (all items minus disabled)
         val allItems = CardGroup.values().toSet()
-        // Check if this is a first-time user (no saved order means never configured)
-        val isFirstTimeUser = Settings.dashboardItemOrder.isBlank()
-        val actualDisabledItems =
-            if (isFirstTimeUser && Settings.dashboardDisabledItems.isEmpty()) {
-                // First time user - Groups disabled by default
-                setOf(CardGroup.Groups)
-            } else {
-                // User has configured settings, respect their choices
-                disabledItems
-            }
-        val visibleCards = allItems - actualDisabledItems
+        val visibleCards = allItems - disabledItems
 
         return DashboardUiState(
             cardOrder = savedOrder,
@@ -164,6 +154,17 @@ class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandCl
     init {
         loadProfiles()
         ProfileManager.registerCallback(::onProfilesChanged)
+
+        viewModelScope.launch {
+            AppLifecycleObserver.isForeground.collect { foreground ->
+                if (_serviceStatus.value != Status.Started) return@collect
+                if (foreground) {
+                    commandClient.connect()
+                } else {
+                    commandClient.disconnect()
+                }
+            }
+        }
     }
 
     override fun onCleared() {
@@ -199,7 +200,7 @@ class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandCl
 
     private fun checkDeprecatedNotes() {
         viewModelScope.launch(Dispatchers.IO) {
-            try {
+            runCatching {
                 // Check if deprecated warnings are disabled
                 if (Settings.disableDeprecatedWarnings) {
                     return@launch
@@ -226,8 +227,6 @@ class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandCl
                         }
                     }
                 }
-            } catch (e: Exception) {
-                sendError(e)
             }
         }
     }
@@ -393,10 +392,7 @@ class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandCl
         }
     }
 
-    fun moveProfile(
-        from: Int,
-        to: Int,
-    ) {
+    fun moveProfile(from: Int, to: Int) {
         val currentProfiles = currentState.profiles.toMutableList()
 
         if (from < to) {
@@ -454,8 +450,11 @@ class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandCl
         when (status) {
             Status.Started -> {
                 checkDeprecatedNotes()
-                commandClient.connect()
+                if (AppLifecycleObserver.isForeground.value) {
+                    commandClient.connect()
+                }
                 reloadSystemProxyStatus()
+                reloadStartedAt()
             }
 
             Status.Stopped -> {
@@ -463,6 +462,9 @@ class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandCl
                 updateState {
                     copy(
                         hasGroups = false,
+                        groupsCount = 0,
+                        connectionsCount = 0,
+                        serviceStartTime = null,
                         clashModeVisible = false,
                         systemProxyVisible = false,
                         trafficVisible = false,
@@ -481,6 +483,20 @@ class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandCl
             }
 
             else -> {}
+        }
+    }
+
+    private fun reloadStartedAt() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val startedAt = Libbox.newStandaloneCommandClient().startedAt
+                withContext(Dispatchers.Main) {
+                    updateState {
+                        copy(serviceStartTime = startedAt)
+                    }
+                }
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -577,6 +593,7 @@ class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandCl
                     goroutines = status.goroutines.toString(),
                     // Only set trafficVisible to true, never back to false from status updates
                     trafficVisible = if (status.trafficAvailable) true else trafficVisible,
+                    connectionsCount = status.connectionsIn,
                     connectionsIn = status.connectionsIn.toString(),
                     connectionsOut = status.connectionsOut.toString(),
                     uplink = "${Libbox.formatBytes(status.uplink)}/s",
@@ -591,10 +608,7 @@ class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandCl
         }
     }
 
-    override fun initializeClashMode(
-        modeList: List<String>,
-        currentMode: String,
-    ) {
+    override fun initializeClashMode(modeList: List<String>, currentMode: String) {
         viewModelScope.launch(Dispatchers.Main) {
             updateState {
                 copy(
@@ -618,7 +632,7 @@ class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandCl
         viewModelScope.launch(Dispatchers.Main) {
             val hasGroups = newGroups.isNotEmpty()
             updateState {
-                copy(hasGroups = hasGroups)
+                copy(hasGroups = hasGroups, groupsCount = newGroups.size)
             }
         }
     }
@@ -679,17 +693,15 @@ class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandCl
     }
 
     // Helper functions for serialization
-    private fun getDefaultItemOrder() =
-        listOf(
-            CardGroup.UploadTraffic,
-            CardGroup.DownloadTraffic,
-            CardGroup.Debug,
-            CardGroup.Connections,
-            CardGroup.SystemProxy,
-            CardGroup.ClashMode,
-            CardGroup.Profiles,
-            CardGroup.Groups,
-        )
+    private fun getDefaultItemOrder() = listOf(
+        CardGroup.UploadTraffic,
+        CardGroup.DownloadTraffic,
+        CardGroup.Debug,
+        CardGroup.Connections,
+        CardGroup.SystemProxy,
+        CardGroup.ClashMode,
+        CardGroup.Profiles,
+    )
 
     private fun loadItemOrder(): List<CardGroup> {
         val savedOrder = Settings.dashboardItemOrder
@@ -744,11 +756,9 @@ class DashboardViewModel : BaseViewModel<DashboardUiState, UiEvent>(), CommandCl
 
     private fun cardGroupToString(card: CardGroup): String = card.name
 
-    private fun stringToCardGroup(name: String): CardGroup? {
-        return try {
-            CardGroup.valueOf(name)
-        } catch (e: IllegalArgumentException) {
-            null
-        }
+    private fun stringToCardGroup(name: String): CardGroup? = try {
+        CardGroup.valueOf(name)
+    } catch (e: IllegalArgumentException) {
+        null
     }
 }

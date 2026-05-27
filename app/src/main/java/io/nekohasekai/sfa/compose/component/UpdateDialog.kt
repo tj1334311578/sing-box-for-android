@@ -27,11 +27,7 @@ import org.kodein.emoji.EmojiTemplateCatalog
 import org.kodein.emoji.all
 
 @Composable
-fun UpdateAvailableDialog(
-    updateInfo: UpdateInfo,
-    onDismiss: () -> Unit,
-    onUpdate: () -> Unit,
-) {
+fun UpdateAvailableDialog(updateInfo: UpdateInfo, onDismiss: () -> Unit, onUpdate: () -> Unit) {
     val context = LocalContext.current
     val emojiCatalog = remember { EmojiTemplateCatalog(Emoji.all()) }
 
@@ -54,8 +50,9 @@ fun UpdateAvailableDialog(
                     Spacer(modifier = Modifier.height(12.dp))
                     MarkdownText(
                         markdown = processedNotes,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                     )
                 }
             }

@@ -5,13 +5,14 @@ object SettingsKey {
     const val SERVICE_MODE = "service_mode"
     const val CHECK_UPDATE_ENABLED = "check_update_enabled"
     const val UPDATE_CHECK_PROMPTED = "update_check_prompted"
+    const val UPDATE_SOURCE = "update_source"
     const val UPDATE_TRACK = "update_track"
+    const val FDROID_MIRROR_URL = "fdroid_mirror_url"
+    const val FDROID_CUSTOM_MIRRORS = "fdroid_custom_mirrors"
     const val SILENT_INSTALL_ENABLED = "silent_install_enabled"
     const val SILENT_INSTALL_METHOD = "silent_install_method"
     const val AUTO_UPDATE_ENABLED = "auto_update_enabled"
-    const val DISABLE_MEMORY_LIMIT = "disable_memory_limit"
     const val DYNAMIC_NOTIFICATION = "dynamic_notification"
-    const val USE_COMPOSE_UI = "use_compose_ui"
     const val DISABLE_DEPRECATED_WARNINGS = "disable_deprecated_warnings"
 
     const val AUTO_REDIRECT = "auto_redirect"
@@ -20,8 +21,15 @@ object SettingsKey {
     const val PER_APP_PROXY_LIST = "per_app_proxy_list"
     const val PER_APP_PROXY_MANAGED_MODE = "per_app_proxy_managed_mode"
     const val PER_APP_PROXY_MANAGED_LIST = "per_app_proxy_managed_list"
+    const val PER_APP_PROXY_PACKAGE_QUERY_MODE = "per_app_proxy_package_query_mode"
 
+    const val ALLOW_BYPASS = "allow_bypass"
     const val SYSTEM_PROXY_ENABLED = "system_proxy_enabled"
+
+    const val PRIVILEGE_SETTINGS_ENABLED = "hide_settings_enabled"
+    const val PRIVILEGE_SETTINGS_LIST = "hide_settings_list"
+    const val PRIVILEGE_SETTINGS_INTERFACE_RENAME_ENABLED = "hide_settings_interface_rename_enabled"
+    const val PRIVILEGE_SETTINGS_INTERFACE_PREFIX = "hide_settings_interface_prefix"
 
     // dashboard
     const val DASHBOARD_ITEM_ORDER = "dashboard_item_order"

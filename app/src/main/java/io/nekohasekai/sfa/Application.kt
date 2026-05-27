@@ -16,6 +16,10 @@ import io.nekohasekai.libbox.SetupOptions
 import io.nekohasekai.sfa.bg.AppChangeReceiver
 import io.nekohasekai.sfa.bg.UpdateProfileWork
 import io.nekohasekai.sfa.constant.Bugs
+import io.nekohasekai.sfa.utils.AppLifecycleObserver
+import io.nekohasekai.sfa.utils.HookModuleUpdateNotifier
+import io.nekohasekai.sfa.utils.HookStatusClient
+import io.nekohasekai.sfa.utils.PrivilegeSettingsClient
 import io.nekohasekai.sfa.vendor.Vendor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -32,18 +36,20 @@ class Application : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        AppLifecycleObserver.register(this)
 
-        Seq.setContext(this)
+//        Seq.setContext(this)
         Libbox.setLocale(Locale.getDefault().toLanguageTag().replace("-", "_"))
+        HookStatusClient.register(this)
+        PrivilegeSettingsClient.register(this)
 
         @Suppress("OPT_IN_USAGE")
         GlobalScope.launch(Dispatchers.IO) {
             initialize()
             UpdateProfileWork.reconfigureUpdater()
+            HookModuleUpdateNotifier.sync(this@Application)
         }
 
-        // Only register AppChangeReceiver if Per-app Proxy is available
-        // This receiver needs QUERY_ALL_PACKAGES permission to function
         if (Vendor.isPerAppProxyAvailable()) {
             registerReceiver(
                 AppChangeReceiver(),

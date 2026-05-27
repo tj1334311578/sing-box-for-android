@@ -21,11 +21,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
@@ -41,67 +41,110 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.compat.LazyColumnCompat
+import io.nekohasekai.sfa.compat.rememberOverscrollEffectCompat
+import io.nekohasekai.sfa.compose.model.Group
+import io.nekohasekai.sfa.compose.model.GroupItem
 import io.nekohasekai.sfa.compose.screen.dashboard.groups.GroupsViewModel
+import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
+import io.nekohasekai.sfa.compose.util.rememberSheetDismissFromContentOnlyIfGestureStartedAtTopModifier
 import io.nekohasekai.sfa.constant.Status
-import io.nekohasekai.sfa.ui.dashboard.Group
-import io.nekohasekai.sfa.ui.dashboard.GroupItem
 import io.nekohasekai.sfa.utils.CommandClient
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupsCard(
     serviceStatus: Status,
-    isCardMode: Boolean = true,
     commandClient: CommandClient? = null,
+    viewModel: GroupsViewModel? = null,
+    showTopBar: Boolean = false,
+    listHeaderContent: (@Composable () -> Unit)? = null,
+    asSheet: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val viewModel: GroupsViewModel =
-        viewModel(
-            factory =
-                object : ViewModelProvider.Factory {
-                    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                        @Suppress("UNCHECKED_CAST")
-                        return GroupsViewModel(commandClient) as T
+    val actualViewModel: GroupsViewModel = viewModel ?: viewModel(
+        factory =
+        object : ViewModelProvider.Factory {
+            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                @Suppress("UNCHECKED_CAST")
+                return GroupsViewModel(commandClient) as T
+            }
+        },
+    )
+    val snackbarHostState = remember { SnackbarHostState() }
+    val uiState by actualViewModel.uiState.collectAsState()
+
+    if (showTopBar) {
+        val allCollapsed = uiState.expandedGroups.isEmpty()
+        OverrideTopBar {
+            TopAppBar(
+                title = { Text(stringResource(R.string.title_groups)) },
+                actions = {
+                    if (uiState.groups.isNotEmpty()) {
+                        IconButton(onClick = { actualViewModel.toggleAllGroups() }) {
+                            Icon(
+                                imageVector =
+                                if (allCollapsed) {
+                                    Icons.Default.UnfoldMore
+                                } else {
+                                    Icons.Default.UnfoldLess
+                                },
+                                contentDescription =
+                                if (allCollapsed) {
+                                    stringResource(R.string.expand_all)
+                                } else {
+                                    stringResource(R.string.collapse_all)
+                                },
+                            )
+                        }
                     }
                 },
-        )
-    val snackbarHostState = remember { SnackbarHostState() }
-    val uiState by viewModel.uiState.collectAsState()
+            )
+        }
+    }
 
     // Stable callbacks to prevent recomposition - use remember with viewModel as key
     val onToggleExpanded =
-        remember(viewModel) {
-            { groupTag: String -> viewModel.toggleGroupExpand(groupTag) }
+        remember(actualViewModel) {
+            { groupTag: String -> actualViewModel.toggleGroupExpand(groupTag) }
         }
     val onItemSelected =
-        remember(viewModel) {
-            { groupTag: String, itemTag: String -> viewModel.selectGroupItem(groupTag, itemTag) }
+        remember(actualViewModel) {
+            { groupTag: String, itemTag: String -> actualViewModel.selectGroupItem(groupTag, itemTag) }
         }
     val onUrlTest =
-        remember(viewModel) {
-            { groupTag: String -> viewModel.urlTest(groupTag) }
+        remember(actualViewModel) {
+            { groupTag: String -> actualViewModel.urlTest(groupTag) }
         }
 
     // Only update service status when it actually changes
     LaunchedEffect(serviceStatus) {
-        viewModel.updateServiceStatus(serviceStatus)
+        actualViewModel.updateServiceStatus(serviceStatus)
     }
 
     // Show snackbar when needed
@@ -116,188 +159,117 @@ fun GroupsCard(
                 )
             when (result) {
                 androidx.compose.material3.SnackbarResult.ActionPerformed -> {
-                    viewModel.closeConnections()
+                    actualViewModel.closeConnections()
                 }
 
                 androidx.compose.material3.SnackbarResult.Dismissed -> {
-                    viewModel.dismissCloseConnectionsSnackbar()
+                    actualViewModel.dismissCloseConnectionsSnackbar()
                 }
             }
         }
     }
 
-    if (isCardMode) {
-        // Card mode - wrapped in a card with header
-        Card(
-            modifier = modifier.fillMaxWidth(),
-        ) {
-            GroupsCardContent(
-                uiState = uiState,
-                isCardMode = true,
-                onToggleAllGroups = { viewModel.toggleAllGroups() },
-                onToggleExpanded = onToggleExpanded,
-                onItemSelected = onItemSelected,
-                onUrlTest = onUrlTest,
-            )
-        }
-    } else {
-        // Standalone mode - direct content without card wrapper
-        GroupsCardContent(
-            uiState = uiState,
-            isCardMode = false,
-            onToggleAllGroups = { viewModel.toggleAllGroups() },
-            onToggleExpanded = onToggleExpanded,
-            onItemSelected = onItemSelected,
-            onUrlTest = onUrlTest,
-            modifier = modifier,
-        )
-    }
+    GroupsCardContent(
+        uiState = uiState,
+        onToggleExpanded = onToggleExpanded,
+        onItemSelected = onItemSelected,
+        onUrlTest = onUrlTest,
+        listHeaderContent = listHeaderContent,
+        asSheet = asSheet,
+        modifier = modifier,
+    )
 }
 
 @Composable
 private fun GroupsCardContent(
     uiState: io.nekohasekai.sfa.compose.screen.dashboard.groups.GroupsUiState,
-    isCardMode: Boolean,
-    onToggleAllGroups: () -> Unit,
     onToggleExpanded: (String) -> Unit,
     onItemSelected: (String, String) -> Unit,
     onUrlTest: (String) -> Unit,
+    listHeaderContent: (@Composable () -> Unit)? = null,
+    asSheet: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        if (isCardMode) {
-            // Card header with title and collapse/expand all button
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FolderOpen,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = stringResource(R.string.title_groups),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-
-                // Collapse/Expand all button in the top right
-                if (uiState.groups.isNotEmpty()) {
-                    val allCollapsed = uiState.expandedGroups.isEmpty()
-                    IconButton(
-                        onClick = onToggleAllGroups,
-                        modifier = Modifier.size(40.dp),
-                    ) {
-                        Icon(
-                            imageVector =
-                                if (allCollapsed) {
-                                    Icons.Default.UnfoldMore
-                                } else {
-                                    Icons.Default.UnfoldLess
-                                },
-                            contentDescription = if (allCollapsed) "Expand All" else "Collapse All",
-                            modifier = Modifier.size(20.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                thickness = 1.dp,
-            )
-        }
-
-        // Groups content
-        if (uiState.isLoading) {
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(200.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
-            }
-        } else if (uiState.groups.isEmpty()) {
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(100.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = "No groups available",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+    val lazyListState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+    val scrollModifier =
+        if (asSheet) {
+            rememberSheetDismissFromContentOnlyIfGestureStartedAtTopModifier {
+                lazyListState.firstVisibleItemIndex == 0 &&
+                    lazyListState.firstVisibleItemScrollOffset == 0
             }
         } else {
-            if (isCardMode) {
-                // In card mode, show groups directly without LazyColumn
-                Column(
-                    modifier =
+            Modifier.nestedScroll(rememberBounceBlockingNestedScrollConnection(lazyListState))
+        }
+    val overscrollEffect = if (asSheet) null else rememberOverscrollEffectCompat()
+
+    LazyColumnCompat(
+        modifier =
+        modifier
+            .fillMaxSize()
+            .then(scrollModifier),
+        state = lazyListState,
+        contentPadding =
+        PaddingValues(
+            start = 16.dp,
+            end = 16.dp,
+            top = 8.dp,
+            bottom = 16.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        overscrollEffect = overscrollEffect,
+    ) {
+        if (listHeaderContent != null) {
+            item(key = "groups_list_header") {
+                listHeaderContent()
+            }
+        }
+
+        when {
+            uiState.isLoading -> {
+                item(key = "groups_loading") {
+                    Box(
+                        modifier =
                         Modifier
-                            .fillMaxWidth(),
-                ) {
-                    uiState.groups.forEachIndexed { index, group ->
-                        // Add divider above each group (not for the first one in card mode)
-                        if (index > 0) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(horizontal = 16.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
-                                thickness = 1.dp,
-                            )
-                        }
-                        ProxyGroupItem(
-                            group = group,
-                            isExpanded = uiState.expandedGroups.contains(group.tag),
-                            onToggleExpanded = { onToggleExpanded(group.tag) },
-                            onItemSelected = { itemTag -> onItemSelected(group.tag, itemTag) },
-                            onUrlTest = { onUrlTest(group.tag) },
-                            showCard = false,
+                            .fillMaxWidth()
+                            .height(200.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                }
+            }
+
+            uiState.groups.isEmpty() -> {
+                item(key = "groups_empty") {
+                    Box(
+                        modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(100.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "No groups available",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-            } else {
-                // In standalone mode, use LazyColumn for scrolling
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding =
-                        PaddingValues(
-                            start = 16.dp,
-                            end = 16.dp,
-                            top = 8.dp,
-                            bottom = 16.dp,
-                        ),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(
-                        items = uiState.groups,
-                        key = { it.tag },
-                        contentType = { "GroupCard" },
-                    ) { group ->
-                        ProxyGroupItem(
-                            group = group,
-                            isExpanded = uiState.expandedGroups.contains(group.tag),
-                            onToggleExpanded = { onToggleExpanded(group.tag) },
-                            onItemSelected = { itemTag -> onItemSelected(group.tag, itemTag) },
-                            onUrlTest = { onUrlTest(group.tag) },
-                            showCard = true,
-                        )
-                    }
+            }
+
+            else -> {
+                items(
+                    items = uiState.groups,
+                    key = { it.tag },
+                    contentType = { "GroupCard" },
+                ) { group ->
+                    ProxyGroupItem(
+                        group = group,
+                        isExpanded = uiState.expandedGroups.contains(group.tag),
+                        onToggleExpanded = { onToggleExpanded(group.tag) },
+                        onItemSelected = { itemTag -> onItemSelected(group.tag, itemTag) },
+                        onUrlTest = { onUrlTest(group.tag) },
+                    )
                 }
             }
         }
@@ -312,9 +284,10 @@ private fun ProxyGroupItem(
     onToggleExpanded: () -> Unit,
     onItemSelected: (String) -> Unit,
     onUrlTest: () -> Unit,
-    showCard: Boolean,
 ) {
-    val content = @Composable {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -408,17 +381,17 @@ private fun ProxyGroupItem(
                                 imageVector = Icons.Default.ExpandMore,
                                 contentDescription = if (isExpanded) "Collapse" else "Expand",
                                 modifier =
-                                    Modifier
-                                        .size(24.dp)
-                                        .graphicsLayer { rotationZ = rotationAngle },
+                                Modifier
+                                    .size(24.dp)
+                                    .graphicsLayer { rotationZ = rotationAngle },
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     },
                     colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
                 )
             }
 
@@ -426,21 +399,21 @@ private fun ProxyGroupItem(
             AnimatedVisibility(
                 visible = isExpanded && group.items.isNotEmpty(),
                 enter =
-                    expandVertically(animationSpec = tween(300)) +
-                        fadeIn(
-                            animationSpec =
-                                tween(
-                                    300,
-                                ),
+                expandVertically(animationSpec = tween(300)) +
+                    fadeIn(
+                        animationSpec =
+                        tween(
+                            300,
                         ),
+                    ),
                 exit =
-                    shrinkVertically(animationSpec = tween(300)) +
-                        fadeOut(
-                            animationSpec =
-                                tween(
-                                    300,
-                                ),
+                shrinkVertically(animationSpec = tween(300)) +
+                    fadeOut(
+                        animationSpec =
+                        tween(
+                            300,
                         ),
+                    ),
             ) {
                 Column {
                     HorizontalDivider(
@@ -459,25 +432,10 @@ private fun ProxyGroupItem(
             }
         }
     }
-
-    if (showCard) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            content()
-        }
-    } else {
-        content()
-    }
 }
 
 @Composable
-private fun ProxyItemsList(
-    items: List<GroupItem>,
-    selectedTag: String,
-    isSelectable: Boolean,
-    onItemSelected: (String) -> Unit,
-) {
+private fun ProxyItemsList(items: List<GroupItem>, selectedTag: String, isSelectable: Boolean, onItemSelected: (String) -> Unit) {
     val itemsPerRow = 2
     val chunkedItems =
         remember(items) {
@@ -486,9 +444,9 @@ private fun ProxyItemsList(
 
     Column(
         modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         chunkedItems.forEach { rowItems ->
@@ -521,13 +479,7 @@ private fun ProxyItemsList(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProxyChip(
-    item: GroupItem,
-    isSelected: Boolean,
-    isSelectable: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+private fun ProxyChip(item: GroupItem, isSelected: Boolean, isSelectable: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     // Use simpler, faster animations
     val animatedElevation by animateFloatAsState(
         targetValue = if (isSelected) 6.dp.value else 1.dp.value,
@@ -546,18 +498,18 @@ private fun ProxyChip(
         androidx.compose.foundation.BorderStroke(
             width = if (isSelected) 2.dp else 1.dp,
             color =
-                when {
-                    isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                    else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
-                },
+            when {
+                isSelected -> MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+            },
         )
 
     val content: @Composable () -> Unit = {
         Row(
             modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
+            Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -571,11 +523,11 @@ private fun ProxyChip(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                     color =
-                        if (isSelected) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
+                    if (isSelected) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -591,11 +543,11 @@ private fun ProxyChip(
                         text = Libbox.proxyDisplayType(item.type),
                         style = MaterialTheme.typography.labelSmall,
                         color =
-                            if (isSelected) {
-                                MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            },
+                        if (isSelected) {
+                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        },
                     )
 
                     // Latency
@@ -637,11 +589,7 @@ private fun ProxyChip(
 }
 
 @Composable
-private fun ProxyLatencyBadge(
-    delay: Int,
-    isSelected: Boolean,
-    modifier: Modifier = Modifier,
-) {
+private fun ProxyLatencyBadge(delay: Int, isSelected: Boolean, modifier: Modifier = Modifier) {
     // Direct color calculation without animation for better performance
     val colorScheme = MaterialTheme.colorScheme
     val latencyColor =
@@ -692,4 +640,21 @@ private fun ProxyLatencyBadge(
         color = latencyColor,
         modifier = modifier,
     )
+}
+
+@Composable
+private fun rememberBounceBlockingNestedScrollConnection(lazyListState: LazyListState): NestedScrollConnection = remember(lazyListState) {
+    object : NestedScrollConnection {
+        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+            // Only block upward scroll (y < 0) at bottom to prevent sheet expansion
+            // Allow downward scroll (y > 0) at top to let sheet collapse
+            return if (available.y < 0) available else Offset.Zero
+        }
+
+        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+            // Only block upward fling (y < 0) to prevent sheet expansion
+            // Allow downward fling (y > 0) to let sheet collapse
+            return if (available.y < 0) available else Velocity.Zero
+        }
+    }
 }

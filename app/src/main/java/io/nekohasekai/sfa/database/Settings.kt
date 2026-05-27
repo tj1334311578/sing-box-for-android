@@ -1,5 +1,6 @@
 package io.nekohasekai.sfa.database
 
+import android.os.Build
 import androidx.room.Room
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.BuildConfig
@@ -40,6 +41,7 @@ object Settings {
     var serviceMode by dataStore.string(SettingsKey.SERVICE_MODE) { ServiceMode.NORMAL }
     var startedByUser by dataStore.boolean(SettingsKey.STARTED_BY_USER)
 
+    var updateSource by dataStore.string(SettingsKey.UPDATE_SOURCE) { "github" }
     var checkUpdateEnabled by dataStore.boolean(SettingsKey.CHECK_UPDATE_ENABLED) { false }
     var updateCheckPrompted by dataStore.boolean(SettingsKey.UPDATE_CHECK_PROMPTED) { false }
     var updateTrack by dataStore.string(SettingsKey.UPDATE_TRACK) {
@@ -54,11 +56,17 @@ object Settings {
         }
     }
     var silentInstallEnabled by dataStore.boolean(SettingsKey.SILENT_INSTALL_ENABLED) { false }
-    var silentInstallMethod by dataStore.string(SettingsKey.SILENT_INSTALL_METHOD) { "PACKAGE_INSTALLER" }
+    var silentInstallMethod by dataStore.string(SettingsKey.SILENT_INSTALL_METHOD) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            "PACKAGE_INSTALLER"
+        } else {
+            "SHIZUKU"
+        }
+    }
+    var fdroidMirrorUrl by dataStore.string(SettingsKey.FDROID_MIRROR_URL) { "https://f-droid.org/repo" }
+    var fdroidCustomMirrors by dataStore.stringSet(SettingsKey.FDROID_CUSTOM_MIRRORS) { emptySet() }
     var autoUpdateEnabled by dataStore.boolean(SettingsKey.AUTO_UPDATE_ENABLED) { false }
-    var disableMemoryLimit by dataStore.boolean(SettingsKey.DISABLE_MEMORY_LIMIT)
     var dynamicNotification by dataStore.boolean(SettingsKey.DYNAMIC_NOTIFICATION) { true }
-    var useComposeUI by dataStore.boolean(SettingsKey.USE_COMPOSE_UI) { true }
     var disableDeprecatedWarnings by dataStore.boolean(SettingsKey.DISABLE_DEPRECATED_WARNINGS) { false }
 
     const val PER_APP_PROXY_DISABLED = 0
@@ -72,15 +80,31 @@ object Settings {
     var perAppProxyManagedMode by dataStore.boolean(SettingsKey.PER_APP_PROXY_MANAGED_MODE) { false }
     var perAppProxyManagedList by dataStore.stringSet(SettingsKey.PER_APP_PROXY_MANAGED_LIST) { emptySet() }
 
-    fun getEffectivePerAppProxyList(): Set<String> {
-        return if (perAppProxyManagedMode) {
-            perAppProxyList union perAppProxyManagedList
-        } else {
-            perAppProxyList
-        }
+    const val PACKAGE_QUERY_MODE_SHIZUKU = "SHIZUKU"
+    const val PACKAGE_QUERY_MODE_ROOT = "ROOT"
+    var perAppProxyPackageQueryMode by dataStore.string(SettingsKey.PER_APP_PROXY_PACKAGE_QUERY_MODE) { PACKAGE_QUERY_MODE_SHIZUKU }
+
+    fun getEffectivePerAppProxyMode(): Int = if (perAppProxyManagedMode) {
+        PER_APP_PROXY_EXCLUDE
+    } else {
+        perAppProxyMode
     }
 
+    fun getEffectivePerAppProxyList(): Set<String> = if (perAppProxyManagedMode) {
+        perAppProxyManagedList
+    } else {
+        perAppProxyList
+    }
+
+    var allowBypass by dataStore.boolean(SettingsKey.ALLOW_BYPASS) { false }
     var systemProxyEnabled by dataStore.boolean(SettingsKey.SYSTEM_PROXY_ENABLED) { true }
+
+    var privilegeSettingsEnabled by dataStore.boolean(SettingsKey.PRIVILEGE_SETTINGS_ENABLED) { false }
+    var privilegeSettingsList by dataStore.stringSet(SettingsKey.PRIVILEGE_SETTINGS_LIST) { emptySet() }
+    var privilegeSettingsInterfaceRenameEnabled by dataStore.boolean(
+        SettingsKey.PRIVILEGE_SETTINGS_INTERFACE_RENAME_ENABLED,
+    ) { false }
+    var privilegeSettingsInterfacePrefix by dataStore.string(SettingsKey.PRIVILEGE_SETTINGS_INTERFACE_PREFIX) { "wlan" }
 
     var dashboardItemOrder by dataStore.string(SettingsKey.DASHBOARD_ITEM_ORDER) { "" }
     var dashboardDisabledItems by dataStore.stringSet(SettingsKey.DASHBOARD_DISABLED_ITEMS) { emptySet() }
@@ -89,11 +113,9 @@ object Settings {
     var cachedApkPath by dataStore.string(SettingsKey.CACHED_APK_PATH) { "" }
     var lastShownUpdateVersion by dataStore.int(SettingsKey.LAST_SHOWN_UPDATE_VERSION) { 0 }
 
-    fun serviceClass(): Class<*> {
-        return when (serviceMode) {
-            ServiceMode.VPN -> VPNService::class.java
-            else -> ProxyService::class.java
-        }
+    fun serviceClass(): Class<*> = when (serviceMode) {
+        ServiceMode.VPN -> VPNService::class.java
+        else -> ProxyService::class.java
     }
 
     suspend fun rebuildServiceMode(): Boolean {

@@ -2,6 +2,7 @@ package io.nekohasekai.sfa.compose.screen.log
 
 import android.content.ClipData
 import android.content.Intent
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -10,6 +11,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -31,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Close
@@ -40,13 +44,14 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -61,6 +66,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -85,8 +92,9 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.R
-import io.nekohasekai.sfa.bg.BoxService
-import io.nekohasekai.sfa.compose.ComposeActivity
+import io.nekohasekai.sfa.compat.WindowSizeClassCompat
+import io.nekohasekai.sfa.compat.isWidthAtLeastBreakpointCompat
+import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.constant.Status
 import java.io.File
 import java.text.SimpleDateFormat
@@ -97,16 +105,99 @@ import java.util.Locale
 @Composable
 fun LogScreen(
     serviceStatus: Status = Status.Stopped,
-    viewModel: LogViewModel = viewModel(),
+    showStartFab: Boolean = false,
+    showStatusBar: Boolean = false,
+    title: String? = null,
+    viewModel: LogViewerViewModel? = null,
+    showPause: Boolean = true,
+    showClear: Boolean = true,
+    showStatusInfo: Boolean = true,
+    emptyMessage: String? = null,
+    saveFilePrefix: String = "logs",
+    onBack: (() -> Unit)? = null,
 ) {
-    val uiState by viewModel.uiState.collectAsState()
+    val resolvedViewModel = viewModel ?: viewModel<LogViewModel>()
+    val uiState by resolvedViewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
+    val isTablet = windowSizeClass.isWidthAtLeastBreakpointCompat(WindowSizeClassCompat.WIDTH_DP_MEDIUM_LOWER_BOUND)
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val resolvedTitle = title ?: stringResource(R.string.title_log)
+    val emptyStateMessage = emptyMessage ?: stringResource(R.string.privilege_settings_hook_logs_empty)
+
+    OverrideTopBar {
+        TopAppBar(
+            title = { Text(resolvedTitle) },
+            navigationIcon = {
+                if (onBack != null) {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.content_description_back),
+                        )
+                    }
+                }
+            },
+            actions = {
+                if (!uiState.isSelectionMode) {
+                    if (showPause) {
+                        IconButton(onClick = { resolvedViewModel.togglePause() }) {
+                            Icon(
+                                imageVector =
+                                if (uiState.isPaused) {
+                                    Icons.Default.PlayArrow
+                                } else {
+                                    Icons.Default.Pause
+                                },
+                                contentDescription =
+                                if (uiState.isPaused) {
+                                    stringResource(R.string.content_description_resume_logs)
+                                } else {
+                                    stringResource(R.string.content_description_pause_logs)
+                                },
+                            )
+                        }
+                    }
+
+                    IconButton(onClick = { resolvedViewModel.toggleSearch() }) {
+                        Icon(
+                            imageVector =
+                            if (uiState.isSearchActive) {
+                                Icons.Default.ExpandLess
+                            } else {
+                                Icons.Default.Search
+                            },
+                            contentDescription =
+                            if (uiState.isSearchActive) {
+                                stringResource(R.string.content_description_collapse_search)
+                            } else {
+                                stringResource(R.string.content_description_search_logs)
+                            },
+                            tint =
+                            if (uiState.isSearchActive) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                        )
+                    }
+
+                    IconButton(onClick = { resolvedViewModel.toggleOptionsMenu() }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = stringResource(R.string.more_options),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+            },
+        )
+    }
 
     // Handle back press in selection mode
     androidx.activity.compose.BackHandler(enabled = uiState.isSelectionMode) {
-        viewModel.clearSelection()
+        resolvedViewModel.clearSelection()
     }
 
     // Track if user is at the bottom of the list
@@ -121,7 +212,7 @@ fun LogScreen(
     // Re-enable auto-scroll when user reaches bottom
     LaunchedEffect(isAtBottom) {
         if (isAtBottom) {
-            viewModel.setAutoScrollEnabled(true)
+            resolvedViewModel.setAutoScrollEnabled(true)
         }
     }
 
@@ -149,7 +240,7 @@ fun LogScreen(
                             }
 
                         if (scrolledUp) {
-                            viewModel.setAutoScrollEnabled(false)
+                            resolvedViewModel.setAutoScrollEnabled(false)
                         }
 
                         dragStartIndex = null
@@ -161,7 +252,7 @@ fun LogScreen(
     }
 
     // Handle scroll to bottom requests from ViewModel
-    val scrollToBottomTrigger by viewModel.scrollToBottomTrigger.collectAsState()
+    val scrollToBottomTrigger by resolvedViewModel.scrollToBottomTrigger.collectAsState()
     LaunchedEffect(scrollToBottomTrigger) {
         if (scrollToBottomTrigger > 0 && uiState.logs.isNotEmpty()) {
             listState.animateScrollToItem(uiState.logs.size - 1)
@@ -170,7 +261,9 @@ fun LogScreen(
 
     // Update service status in ViewModel
     LaunchedEffect(serviceStatus) {
-        viewModel.updateServiceStatus(serviceStatus)
+        if (showStatusInfo) {
+            resolvedViewModel.updateServiceStatus(serviceStatus)
+        }
     }
 
     Box(
@@ -189,16 +282,16 @@ fun LogScreen(
                 ) {
                     Row(
                         modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            IconButton(onClick = { viewModel.clearSelection() }) {
+                            IconButton(onClick = { resolvedViewModel.clearSelection() }) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = stringResource(R.string.content_description_exit_selection_mode),
@@ -206,10 +299,10 @@ fun LogScreen(
                             }
                             Text(
                                 text =
-                                    stringResource(
-                                        R.string.selected_count,
-                                        uiState.selectedLogIndices.size,
-                                    ),
+                                stringResource(
+                                    R.string.selected_count,
+                                    uiState.selectedLogIndices.size,
+                                ),
                                 style = MaterialTheme.typography.titleMedium,
                                 modifier = Modifier.padding(start = 8.dp),
                             )
@@ -217,9 +310,9 @@ fun LogScreen(
                         Row {
                             IconButton(
                                 onClick = {
-                                    val selectedText = viewModel.getSelectedLogsText()
+                                    val selectedText = resolvedViewModel.getSelectedLogsText()
                                     if (selectedText.isNotEmpty()) {
-                                        val clipLabel = context.getString(R.string.title_log)
+                                        val clipLabel = resolvedTitle
                                         val clip = ClipData.newPlainText(clipLabel, selectedText)
                                         Application.clipboard.setPrimaryClip(clip)
                                         Toast.makeText(
@@ -227,7 +320,7 @@ fun LogScreen(
                                             context.getString(R.string.copied_to_clipboard),
                                             Toast.LENGTH_SHORT,
                                         ).show()
-                                        viewModel.clearSelection()
+                                        resolvedViewModel.clearSelection()
                                     }
                                 },
                                 enabled = uiState.selectedLogIndices.isNotEmpty(),
@@ -251,22 +344,22 @@ fun LogScreen(
                 ) {
                     Row(
                         modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
                             text =
-                                stringResource(
-                                    R.string.filter_label,
-                                    uiState.filterLogLevel.label,
-                                ),
+                            stringResource(
+                                R.string.filter_label,
+                                uiState.filterLogLevel.label,
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                         )
                         TextButton(
-                            onClick = { viewModel.setLogLevel(LogLevel.Default) },
+                            onClick = { resolvedViewModel.setLogLevel(LogLevel.Default) },
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                             modifier = Modifier.height(24.dp),
                         ) {
@@ -283,19 +376,19 @@ fun LogScreen(
             AnimatedVisibility(
                 visible = uiState.isSearchActive,
                 enter =
-                    expandVertically(
+                expandVertically(
+                    animationSpec = tween(300),
+                ) +
+                    fadeIn(
                         animationSpec = tween(300),
-                    ) +
-                        fadeIn(
-                            animationSpec = tween(300),
-                        ),
+                    ),
                 exit =
-                    shrinkVertically(
+                shrinkVertically(
+                    animationSpec = tween(300),
+                ) +
+                    fadeOut(
                         animationSpec = tween(300),
-                    ) +
-                        fadeOut(
-                            animationSpec = tween(300),
-                        ),
+                    ),
             ) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -311,12 +404,12 @@ fun LogScreen(
 
                     OutlinedTextField(
                         value = uiState.searchQuery,
-                        onValueChange = { viewModel.updateSearchQuery(it) },
+                        onValueChange = { resolvedViewModel.updateSearchQuery(it) },
                         modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
-                                .focusRequester(focusRequester),
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
+                            .focusRequester(focusRequester),
                         placeholder = { Text(stringResource(R.string.search_logs_placeholder)) },
                         leadingIcon = {
                             Icon(
@@ -326,7 +419,7 @@ fun LogScreen(
                         },
                         trailingIcon = {
                             if (uiState.searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.updateSearchQuery("") }) {
+                                IconButton(onClick = { resolvedViewModel.updateSearchQuery("") }) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
                                         contentDescription = stringResource(R.string.content_description_clear_search),
@@ -337,17 +430,16 @@ fun LogScreen(
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions =
-                            KeyboardActions(
-                                onSearch = {
-                                    focusManager.clearFocus()
-                                },
-                            ),
+                        KeyboardActions(
+                            onSearch = {
+                                focusManager.clearFocus()
+                            },
+                        ),
                     )
                 }
             }
 
-            if (uiState.logs.isEmpty()) {
-                // Empty state
+            if (uiState.errorMessage != null) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
@@ -357,13 +449,37 @@ fun LogScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
-                            text =
+                            text = uiState.errorTitle ?: "Error",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Text(
+                            text = uiState.errorMessage ?: "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            } else if (uiState.logs.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = if (showStatusInfo) {
                                 when (serviceStatus) {
                                     Status.Started -> stringResource(R.string.status_started)
                                     Status.Starting -> stringResource(R.string.status_starting)
                                     Status.Stopping -> stringResource(R.string.status_stopping)
                                     else -> stringResource(R.string.status_default)
-                                },
+                                }
+                            } else {
+                                emptyStateMessage
+                            },
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -371,16 +487,21 @@ fun LogScreen(
                 }
             } else {
                 // Log list
+                val bottomPadding = when {
+                    showStartFab -> 88.dp
+                    showStatusBar -> 74.dp
+                    else -> 0.dp
+                }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding =
-                        PaddingValues(
-                            start = 8.dp,
-                            end = 8.dp,
-                            top = 8.dp,
-                            bottom = 88.dp, // Space for FAB
-                        ),
+                    PaddingValues(
+                        start = 8.dp,
+                        end = 8.dp,
+                        top = 8.dp,
+                        bottom = bottomPadding,
+                    ),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     itemsIndexed(
@@ -394,13 +515,13 @@ fun LogScreen(
                             isSelectionMode = uiState.isSelectionMode,
                             onLongClick = {
                                 if (!uiState.isSelectionMode) {
-                                    viewModel.toggleSelectionMode()
-                                    viewModel.toggleLogSelection(index)
+                                    resolvedViewModel.toggleSelectionMode()
+                                    resolvedViewModel.toggleLogSelection(index)
                                 }
                             },
                             onClick = {
                                 if (uiState.isSelectionMode) {
-                                    viewModel.toggleLogSelection(index)
+                                    resolvedViewModel.toggleLogSelection(index)
                                 }
                             },
                         )
@@ -412,9 +533,9 @@ fun LogScreen(
         // Options Menu - Material 3 style
         Box(
             modifier =
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(end = 8.dp),
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 8.dp),
         ) {
             var expandedLogLevel by remember { mutableStateOf(false) }
             var expandedSave by remember { mutableStateOf(false) }
@@ -427,19 +548,19 @@ fun LogScreen(
                         uri?.let {
                             try {
                                 context.contentResolver.openOutputStream(it)?.use { outputStream ->
-                                    val logsText = viewModel.getAllLogsText()
+                                    val logsText = resolvedViewModel.getAllLogsText()
                                     outputStream.write(logsText.toByteArray())
                                     outputStream.flush()
                                     Toast.makeText(
                                         context,
-                                        context.getString(R.string.logs_saved_successfully),
+                                        context.getString(R.string.success_logs_saved),
                                         Toast.LENGTH_SHORT,
                                     ).show()
                                 }
                             } catch (e: Exception) {
                                 Toast.makeText(
                                     context,
-                                    context.getString(R.string.failed_to_save_logs, e.message),
+                                    context.getString(R.string.failed_save_logs, e.message),
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             }
@@ -450,7 +571,7 @@ fun LogScreen(
             DropdownMenu(
                 expanded = uiState.isOptionsMenuOpen,
                 onDismissRequest = {
-                    viewModel.toggleOptionsMenu()
+                    resolvedViewModel.toggleOptionsMenu()
                     expandedLogLevel = false
                     expandedSave = false
                 },
@@ -475,11 +596,11 @@ fun LogScreen(
                     trailingIcon = {
                         Icon(
                             imageVector =
-                                if (expandedLogLevel) {
-                                    Icons.Default.ExpandLess
-                                } else {
-                                    Icons.Default.ExpandMore
-                                },
+                            if (expandedLogLevel) {
+                                Icons.Default.ExpandLess
+                            } else {
+                                Icons.Default.ExpandMore
+                            },
                             contentDescription = null,
                         )
                     },
@@ -493,30 +614,30 @@ fun LogScreen(
                                 Text(text = level.label)
                             },
                             onClick = {
-                                viewModel.setLogLevel(level)
-                                viewModel.toggleOptionsMenu()
+                                resolvedViewModel.setLogLevel(level)
+                                resolvedViewModel.toggleOptionsMenu()
                                 expandedLogLevel = false
                             },
                             leadingIcon = {
                                 Icon(
                                     imageVector =
-                                        if (uiState.filterLogLevel == level) {
-                                            Icons.Default.RadioButtonChecked
-                                        } else {
-                                            Icons.Default.RadioButtonUnchecked
-                                        },
+                                    if (uiState.filterLogLevel == level) {
+                                        Icons.Default.RadioButtonChecked
+                                    } else {
+                                        Icons.Default.RadioButtonUnchecked
+                                    },
                                     contentDescription =
-                                        if (uiState.filterLogLevel == level) {
-                                            stringResource(R.string.group_selected_title)
-                                        } else {
-                                            null
-                                        },
+                                    if (uiState.filterLogLevel == level) {
+                                        stringResource(R.string.group_selected_title)
+                                    } else {
+                                        null
+                                    },
                                     tint =
-                                        if (uiState.filterLogLevel == level) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
+                                    if (uiState.filterLogLevel == level) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
                                     modifier = Modifier.padding(start = 24.dp),
                                 )
                             },
@@ -545,11 +666,11 @@ fun LogScreen(
                     trailingIcon = {
                         Icon(
                             imageVector =
-                                if (expandedSave) {
-                                    Icons.Default.ExpandLess
-                                } else {
-                                    Icons.Default.ExpandMore
-                                },
+                            if (expandedSave) {
+                                Icons.Default.ExpandLess
+                            } else {
+                                Icons.Default.ExpandMore
+                            },
                             contentDescription = null,
                         )
                     },
@@ -563,13 +684,10 @@ fun LogScreen(
                             Text(text = stringResource(R.string.save_to_clipboard))
                         },
                         onClick = {
-                            val logsText = viewModel.getAllLogsText()
+                            val logsText = resolvedViewModel.getAllLogsText()
                             if (logsText.isNotEmpty()) {
                                 val clip =
-                                    ClipData.newPlainText(
-                                        context.getString(R.string.title_log),
-                                        logsText,
-                                    )
+                                    ClipData.newPlainText(resolvedTitle, logsText)
                                 Application.clipboard.setPrimaryClip(clip)
                                 Toast.makeText(
                                     context,
@@ -583,7 +701,7 @@ fun LogScreen(
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             }
-                            viewModel.toggleOptionsMenu()
+                            resolvedViewModel.toggleOptionsMenu()
                             expandedSave = false
                         },
                         leadingIcon = {
@@ -607,8 +725,8 @@ fun LogScreen(
                                     "yyyyMMdd_HHmmss",
                                     Locale.getDefault(),
                                 ).format(Date())
-                            saveFileLauncher.launch("logs_$timestamp.txt")
-                            viewModel.toggleOptionsMenu()
+                            saveFileLauncher.launch("${saveFilePrefix}_$timestamp.txt")
+                            resolvedViewModel.toggleOptionsMenu()
                             expandedSave = false
                         },
                         leadingIcon = {
@@ -627,7 +745,7 @@ fun LogScreen(
                             Text(text = stringResource(R.string.menu_share))
                         },
                         onClick = {
-                            val logsText = viewModel.getAllLogsText()
+                            val logsText = resolvedViewModel.getAllLogsText()
                             if (logsText.isNotEmpty()) {
                                 try {
                                     val logsDir =
@@ -637,7 +755,7 @@ fun LogScreen(
                                             "yyyyMMdd_HHmmss",
                                             Locale.getDefault(),
                                         ).format(Date())
-                                    val logFile = File(logsDir, "logs_$timestamp.txt")
+                                    val logFile = File(logsDir, "${saveFilePrefix}_$timestamp.txt")
                                     logFile.writeText(logsText)
 
                                     val uri =
@@ -661,7 +779,7 @@ fun LogScreen(
                                 } catch (e: Exception) {
                                     Toast.makeText(
                                         context,
-                                        context.getString(R.string.failed_to_share_logs, e.message),
+                                        context.getString(R.string.failed_share_logs, e.message),
                                         Toast.LENGTH_SHORT,
                                     ).show()
                                 }
@@ -672,7 +790,7 @@ fun LogScreen(
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             }
-                            viewModel.toggleOptionsMenu()
+                            resolvedViewModel.toggleOptionsMenu()
                             expandedSave = false
                         },
                         leadingIcon = {
@@ -688,82 +806,62 @@ fun LogScreen(
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 }
 
-                // Clear logs option
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = stringResource(R.string.clear_logs),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    },
-                    onClick = {
-                        viewModel.requestClearLogs()
-                        viewModel.toggleOptionsMenu()
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                        )
-                    },
-                )
+                if (showClear) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.clear_logs),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                        onClick = {
+                            resolvedViewModel.requestClearLogs()
+                            resolvedViewModel.toggleOptionsMenu()
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        },
+                    )
+                }
             }
         }
 
         // FABs - Hide during selection mode
+        val padFabVisible = isTablet && (showStartFab || showStatusBar)
+        val fabBottomPadding = when {
+            padFabVisible -> 20.dp + 64.dp + 16.dp
+            showStartFab -> 88.dp
+            showStatusBar -> 74.dp
+            else -> 16.dp
+        }
+        val fabEndPadding = if (isTablet) 20.dp else 16.dp
         Column(
             modifier =
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp),
+            Modifier
+                .align(Alignment.BottomEnd)
+                .padding(bottom = fabBottomPadding, end = fabEndPadding, top = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // Scroll to bottom FAB
+            // Use fade animation on API 23 to avoid OpenGLRenderer crash with scale transforms
             AnimatedVisibility(
                 visible = !isAtBottom && !uiState.isSelectionMode && uiState.logs.isNotEmpty(),
-                enter = androidx.compose.animation.scaleIn(),
-                exit = androidx.compose.animation.scaleOut(),
+                enter = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) scaleIn() else fadeIn(),
+                exit = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) scaleOut() else fadeOut(),
             ) {
                 FloatingActionButton(
-                    onClick = { viewModel.scrollToBottom() },
-                    containerColor = MaterialTheme.colorScheme.secondary,
+                    onClick = { resolvedViewModel.scrollToBottom() },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
                         contentDescription = stringResource(R.string.content_description_scroll_to_bottom),
-                    )
-                }
-            }
-
-            // Start/Stop Service FAB
-            AnimatedVisibility(
-                visible = serviceStatus != Status.Stopping && !uiState.isSelectionMode,
-                enter = androidx.compose.animation.scaleIn(),
-                exit = androidx.compose.animation.scaleOut(),
-            ) {
-                FloatingActionButton(
-                    onClick = {
-                        when (serviceStatus) {
-                            Status.Started, Status.Starting -> BoxService.stop()
-                            Status.Stopped -> (context as ComposeActivity).startService()
-                            else -> {}
-                        }
-                    },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                ) {
-                    Icon(
-                        imageVector =
-                            when (serviceStatus) {
-                                Status.Started, Status.Starting -> Icons.Default.Stop
-                                else -> Icons.Default.PlayArrow
-                            },
-                        contentDescription =
-                            when (serviceStatus) {
-                                Status.Started, Status.Starting -> stringResource(R.string.stop)
-                                else -> stringResource(R.string.action_start)
-                            },
                     )
                 }
             }
@@ -783,34 +881,34 @@ fun LogItem(
 ) {
     Card(
         modifier =
-            Modifier
-                .fillMaxWidth()
-                .combinedClickable(
-                    onClick = onClick,
-                    onLongClick = onLongClick,
-                ),
+        Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
         shape = RoundedCornerShape(4.dp),
         colors =
-            CardDefaults.cardColors(
-                containerColor =
-                    if (isSelected) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    },
-            ),
-        border =
+        CardDefaults.cardColors(
+            containerColor =
             if (isSelected) {
-                CardDefaults.outlinedCardBorder().copy(
-                    width = 2.dp,
-                    brush =
-                        androidx.compose.ui.graphics.SolidColor(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                        ),
-                )
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
             } else {
-                null
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
             },
+        ),
+        border =
+        if (isSelected) {
+            CardDefaults.outlinedCardBorder().copy(
+                width = 2.dp,
+                brush =
+                androidx.compose.ui.graphics.SolidColor(
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                ),
+            )
+        } else {
+            null
+        },
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -820,13 +918,13 @@ fun LogItem(
                 Icon(
                     imageVector = if (isSelected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
                     contentDescription =
-                        if (isSelected) {
-                            stringResource(R.string.group_selected_title)
-                        } else {
-                            stringResource(
-                                R.string.not_selected,
-                            )
-                        },
+                    if (isSelected) {
+                        stringResource(R.string.group_selected_title)
+                    } else {
+                        stringResource(
+                            R.string.not_selected,
+                        )
+                    },
                     modifier = Modifier.padding(start = 12.dp, end = 4.dp),
                     tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -834,14 +932,14 @@ fun LogItem(
             Text(
                 text = annotatedString,
                 modifier =
-                    Modifier
-                        .weight(1f)
-                        .padding(
-                            start = if (isSelectionMode) 4.dp else 12.dp,
-                            end = 12.dp,
-                            top = 8.dp,
-                            bottom = 8.dp,
-                        ),
+                Modifier
+                    .weight(1f)
+                    .padding(
+                        start = if (isSelectionMode) 4.dp else 12.dp,
+                        end = 12.dp,
+                        top = 8.dp,
+                        bottom = 8.dp,
+                    ),
                 fontSize = 13.sp,
                 fontFamily = FontFamily.Monospace,
                 lineHeight = 18.sp,

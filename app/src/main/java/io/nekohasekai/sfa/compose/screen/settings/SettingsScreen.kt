@@ -1,7 +1,5 @@
 package io.nekohasekai.sfa.compose.screen.settings
 
-import android.os.Build
-import android.os.PowerManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -15,13 +13,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FilterAlt
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
@@ -32,13 +30,12 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -46,47 +43,50 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.compose.topbar.OverrideTopBar
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.update.UpdateState
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import io.nekohasekai.sfa.utils.HookModuleUpdateNotifier
+import io.nekohasekai.sfa.utils.HookStatusClient
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(navController: NavController) {
+    OverrideTopBar {
+        TopAppBar(
+            title = { Text(stringResource(R.string.title_settings)) },
+        )
+    }
+
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val hasUpdate by UpdateState.hasUpdate
-    var isBatteryOptimizationIgnored by remember { mutableStateOf(true) }
-
+    val hookStatus by HookStatusClient.status.collectAsState()
+    val hasPendingPrivilegeDowngrade = HookModuleUpdateNotifier.isDowngrade(hookStatus)
+    val hasPendingPrivilegeUpdate = HookModuleUpdateNotifier.isUpgrade(hookStatus)
     LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val pm = context.getSystemService(PowerManager::class.java)
-            isBatteryOptimizationIgnored =
-                pm?.isIgnoringBatteryOptimizations(context.packageName) == true
-        }
+        HookStatusClient.refresh()
     }
 
     Column(
         modifier =
-            Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface)
-                .verticalScroll(rememberScrollState())
-                .padding(vertical = 8.dp),
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = 8.dp),
     ) {
         // General Settings Group
         Card(
             modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             colors =
-                CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                ),
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            ),
         ) {
             Column {
                 ListItem(
@@ -109,13 +109,13 @@ fun SettingsScreen(navController: NavController) {
                         }
                     },
                     modifier =
-                        Modifier
-                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                            .clickable { navController.navigate("settings/app") },
+                    Modifier
+                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                        .clickable { navController.navigate("settings/app") },
                     colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
                 )
 
                 ListItem(
@@ -133,12 +133,12 @@ fun SettingsScreen(navController: NavController) {
                         )
                     },
                     modifier =
-                        Modifier
-                            .clickable { navController.navigate("settings/core") },
+                    Modifier
+                        .clickable { navController.navigate("settings/core") },
                     colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
                 )
 
                 ListItem(
@@ -155,16 +155,11 @@ fun SettingsScreen(navController: NavController) {
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     },
-                    trailingContent = {
-                        if (!isBatteryOptimizationIgnored) {
-                            Badge(containerColor = MaterialTheme.colorScheme.primary)
-                        }
-                    },
                     modifier = Modifier.clickable { navController.navigate("settings/service") },
                     colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
                 )
 
                 ListItem(
@@ -182,13 +177,43 @@ fun SettingsScreen(navController: NavController) {
                         )
                     },
                     modifier =
-                        Modifier
-                            .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
-                            .clickable { navController.navigate("settings/profile_override") },
+                    Modifier
+                        .clickable { navController.navigate("settings/profile_override") },
                     colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
+                )
+
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            stringResource(R.string.privilege_settings),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    },
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.AdminPanelSettings,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    trailingContent = {
+                        if (hasPendingPrivilegeDowngrade) {
+                            Badge(containerColor = MaterialTheme.colorScheme.error)
+                        } else if (hasPendingPrivilegeUpdate) {
+                            Badge(containerColor = Color(0xFFFFC107))
+                        }
+                    },
+                    modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
+                        .clickable { navController.navigate("settings/privilege") },
+                    colors =
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
                 )
             }
         }
@@ -203,19 +228,19 @@ fun SettingsScreen(navController: NavController) {
 
         Card(
             modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
             colors =
-                CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                ),
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            ),
         ) {
             Column {
                 ListItem(
                     headlineContent = {
                         Text(
-                            stringResource(R.string.service_error_deprecated_warning_documentation),
+                            stringResource(R.string.error_deprecated_documentation),
                             style = MaterialTheme.typography.bodyLarge,
                         )
                     },
@@ -234,17 +259,17 @@ fun SettingsScreen(navController: NavController) {
                         )
                     },
                     modifier =
-                        Modifier
-                            .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                            .clickable {
-                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-                                intent.data = android.net.Uri.parse("https://sing-box.sagernet.org/")
-                                context.startActivity(intent)
-                            },
+                    Modifier
+                        .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                        .clickable {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+                            intent.data = android.net.Uri.parse("https://sing-box.sagernet.org/")
+                            context.startActivity(intent)
+                        },
                     colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
                 )
 
                 ListItem(
@@ -269,17 +294,17 @@ fun SettingsScreen(navController: NavController) {
                         )
                     },
                     modifier =
-                        Modifier
-                            .clickable {
-                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-                                intent.data =
-                                    android.net.Uri.parse("https://github.com/SagerNet/sing-box-for-android")
-                                context.startActivity(intent)
-                            },
+                    Modifier
+                        .clickable {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+                            intent.data =
+                                android.net.Uri.parse("https://github.com/SagerNet/sing-box-for-android")
+                            context.startActivity(intent)
+                        },
                     colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
                 )
 
                 ListItem(
@@ -304,75 +329,17 @@ fun SettingsScreen(navController: NavController) {
                         )
                     },
                     modifier =
-                        Modifier
-                            .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
-                            .clickable {
-                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
-                                intent.data = android.net.Uri.parse("https://sekai.icu/sponsors/")
-                                context.startActivity(intent)
-                            },
-                    colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
-                )
-            }
-        }
-
-        if (BuildConfig.DEBUG) {
-            // Debug
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = stringResource(R.string.title_debug),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
-            )
-            Card(
-                modifier =
                     Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                colors =
-                    CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                    ),
-            ) {
-                ListItem(
-                    headlineContent = {
-                        Text(
-                            stringResource(R.string.switch_to_legacy_ui),
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    },
-                    leadingContent = {
-                        Icon(
-                            imageVector = Icons.Outlined.SwapHoriz,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                    modifier =
-                        Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                scope.launch(Dispatchers.IO) {
-                                    Settings.useComposeUI = false
-                                    val intent =
-                                        android.content.Intent(
-                                            context,
-                                            Class.forName("io.nekohasekai.sfa.ui.MainActivity"),
-                                        )
-                                    intent.flags =
-                                        android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
-                                    context.startActivity(intent)
-                                }
-                            },
+                        .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
+                        .clickable {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW)
+                            intent.data = android.net.Uri.parse("https://sekai.icu/sponsors/")
+                            context.startActivity(intent)
+                        },
                     colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
+                    ListItemDefaults.colors(
+                        containerColor = Color.Transparent,
+                    ),
                 )
             }
         }

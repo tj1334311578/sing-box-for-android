@@ -1,12 +1,12 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
-import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,7 +43,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +51,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -60,7 +61,7 @@ import androidx.compose.ui.unit.dp
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.ProfileContent
 import io.nekohasekai.sfa.R
-import io.nekohasekai.sfa.compose.screen.configuration.QRCodeDialog
+import io.nekohasekai.sfa.compose.component.qr.QRCodeDialog
 import io.nekohasekai.sfa.compose.util.ProfileIcons
 import io.nekohasekai.sfa.compose.util.QRCodeGenerator
 import io.nekohasekai.sfa.compose.util.RelativeTimeFormatter
@@ -83,8 +84,6 @@ fun ProfilePickerSheet(
     onProfileDelete: (Profile) -> Unit,
     onProfileMove: (Int, Int) -> Unit,
     onDismiss: () -> Unit,
-    shareQRCodeImage: suspend (Bitmap, String) -> Unit,
-    saveQRCodeToGallery: suspend (Bitmap, String) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
@@ -173,29 +172,14 @@ fun ProfilePickerSheet(
                 profile.typed.remoteURL,
             )
         }
-        val qrBitmap = remember(link) {
-            QRCodeGenerator.generate(link)
-        }
+        val surfaceColor = MaterialTheme.colorScheme.surface.toArgb()
+        val qrBitmap = QRCodeGenerator.rememberPrimaryBitmap(link, backgroundColor = surfaceColor)
 
         QRCodeDialog(
             bitmap = qrBitmap,
             onDismiss = {
                 showQRCodeDialog = false
                 qrCodeProfile = null
-            },
-            onShare = {
-                coroutineScope.launch {
-                    shareQRCodeImage(qrBitmap, profile.name)
-                }
-                showQRCodeDialog = false
-                qrCodeProfile = null
-            },
-            onSave = {
-                coroutineScope.launch {
-                    saveQRCodeToGallery(qrBitmap, profile.name)
-                    showQRCodeDialog = false
-                    qrCodeProfile = null
-                }
             },
         )
     }
@@ -261,7 +245,7 @@ private fun ProfilePickerRow(
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
                             context,
-                            context.getString(R.string.profile_saved_successfully),
+                            context.getString(R.string.success_profile_saved),
                             Toast.LENGTH_SHORT,
                         ).show()
                     }
@@ -269,7 +253,7 @@ private fun ProfilePickerRow(
                     withContext(Dispatchers.Main) {
                         Toast.makeText(
                             context,
-                            "${context.getString(R.string.profile_save_failed)}: ${e.message}",
+                            "${context.getString(R.string.failed_save_profile)}: ${e.message}",
                             Toast.LENGTH_SHORT,
                         ).show()
                     }
@@ -285,11 +269,23 @@ private fun ProfilePickerRow(
         color = when {
             isDragging -> MaterialTheme.colorScheme.tertiaryContainer
             isSelected -> if (isSystemInDarkTheme()) {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                lerp(
+                    MaterialTheme.colorScheme.surfaceContainerLow,
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                    0.5f,
+                )
             } else {
                 MaterialTheme.colorScheme.surfaceDim
             }
-            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            else -> if (isSystemInDarkTheme()) {
+                lerp(
+                    MaterialTheme.colorScheme.surfaceContainerLow,
+                    MaterialTheme.colorScheme.surfaceContainerHigh,
+                    0.35f,
+                )
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            }
         },
         tonalElevation = animatedElevation.dp,
     ) {

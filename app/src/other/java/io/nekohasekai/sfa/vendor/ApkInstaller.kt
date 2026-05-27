@@ -1,13 +1,14 @@
 package io.nekohasekai.sfa.vendor
 
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageInstaller
-import android.os.Build
+import io.nekohasekai.sfa.Application
+import io.nekohasekai.sfa.bg.BoxService
+import io.nekohasekai.sfa.bg.RootClient
 import io.nekohasekai.sfa.database.Settings
+import io.nekohasekai.sfa.utils.HookStatusClient
+import io.nekohasekai.sfa.xposed.XposedActivation
+import kotlinx.coroutines.delay
 import java.io.File
-import java.io.FileInputStream
 
 enum class InstallMethod {
     PACKAGE_INSTALLER,
@@ -17,7 +18,26 @@ enum class InstallMethod {
 
 object ApkInstaller {
 
+    private suspend fun stopServiceIfRunning() {
+        val commandSocket = File(Application.application.filesDir, "command.sock")
+        if (!commandSocket.exists()) {
+            return
+        }
+        BoxService.stop()
+        repeat(20) {
+            delay(100)
+            if (!commandSocket.exists()) {
+                return
+            }
+        }
+    }
+
     fun getConfiguredMethod(): InstallMethod {
+        if (HookStatusClient.status.value?.active == true ||
+            XposedActivation.isActivated(Application.application)
+        ) {
+            return InstallMethod.ROOT
+        }
         return if (Settings.silentInstallEnabled) {
             InstallMethod.valueOf(Settings.silentInstallMethod)
         } else {
@@ -25,60 +45,23 @@ object ApkInstaller {
         }
     }
 
-    suspend fun install(context: Context, apkFile: File, method: InstallMethod = getConfiguredMethod()): Result<Unit> {
-        return when (method) {
+    suspend fun install(context: Context, apkFile: File, method: InstallMethod = getConfiguredMethod()) {
+        stopServiceIfRunning()
+        when (method) {
             InstallMethod.SHIZUKU -> ShizukuInstaller.install(apkFile)
             InstallMethod.ROOT -> RootInstaller.install(apkFile)
-            InstallMethod.PACKAGE_INSTALLER -> installWithPackageInstaller(context, apkFile)
+            InstallMethod.PACKAGE_INSTALLER -> SystemPackageInstaller.install(context, apkFile)
         }
     }
 
-    fun canSystemSilentInstall(): Boolean {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    }
+    fun canSystemSilentInstall(): Boolean = SystemPackageInstaller.canSystemSilentInstall()
 
     suspend fun canSilentInstall(): Boolean {
         val method = getConfiguredMethod()
         return when (method) {
             InstallMethod.PACKAGE_INSTALLER -> canSystemSilentInstall()
             InstallMethod.SHIZUKU -> ShizukuInstaller.isAvailable() && ShizukuInstaller.checkPermission()
-            InstallMethod.ROOT -> RootInstaller.checkAccess()
-        }
-    }
-
-    private fun installWithPackageInstaller(context: Context, apkFile: File): Result<Unit> {
-        return try {
-            val packageInstaller = context.packageManager.packageInstaller
-            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-            params.setAppPackageName(context.packageName)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-            }
-
-            val sessionId = packageInstaller.createSession(params)
-            packageInstaller.openSession(sessionId).use { session ->
-                session.openWrite("update.apk", 0, apkFile.length()).use { outputStream ->
-                    FileInputStream(apkFile).use { inputStream ->
-                        inputStream.copyTo(outputStream)
-                    }
-                    session.fsync(outputStream)
-                }
-
-                val intent = Intent(context, InstallResultReceiver::class.java).apply {
-                    action = InstallResultReceiver.ACTION_INSTALL_COMPLETE
-                }
-                val pendingIntent = PendingIntent.getBroadcast(
-                    context,
-                    sessionId,
-                    intent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-                )
-
-                session.commit(pendingIntent.intentSender)
-            }
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
+            InstallMethod.ROOT -> RootClient.checkRootAvailable()
         }
     }
 }

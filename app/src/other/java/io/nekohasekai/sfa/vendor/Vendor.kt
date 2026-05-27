@@ -8,19 +8,20 @@ import androidx.camera.core.ImageAnalysis
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.R
+import io.nekohasekai.sfa.bg.RootClient
+import io.nekohasekai.sfa.compose.screen.qrscan.QRCodeCropArea
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateInfo
+import io.nekohasekai.sfa.update.UpdateSource
 import io.nekohasekai.sfa.update.UpdateState
 import io.nekohasekai.sfa.update.UpdateTrack
+import io.nekohasekai.sfa.update.checkFDroidUpdate
 
 object Vendor : VendorInterface {
     private const val TAG = "Vendor"
 
-    override fun checkUpdate(
-        activity: Activity,
-        byUser: Boolean,
-    ) {
+    override fun checkUpdate(activity: Activity, byUser: Boolean) {
         try {
             val updateInfo = checkUpdateAsync()
             if (updateInfo != null) {
@@ -91,31 +92,21 @@ object Vendor : VendorInterface {
     override fun createQRCodeAnalyzer(
         onSuccess: (String) -> Unit,
         onFailure: (Exception) -> Unit,
-    ): ImageAnalysis.Analyzer? {
-        return null
-    }
+        onCropArea: ((QRCodeCropArea?) -> Unit)?,
+    ): ImageAnalysis.Analyzer? = null
 
-    override fun isPerAppProxyAvailable(): Boolean {
-        return true
-    }
+    override val hasCustomUpdate = true
 
-    override fun supportsTrackSelection(): Boolean {
-        return true
-    }
+    override val updateSources = listOf(UpdateSource.GITHUB, UpdateSource.FDROID)
 
-    override fun checkUpdateAsync(): UpdateInfo? {
-        val track = UpdateTrack.fromString(Settings.updateTrack)
-        return GitHubUpdateChecker().use { checker ->
-            checker.checkUpdate(track)
+    override fun checkUpdateAsync(): UpdateInfo? = when (UpdateSource.fromString(Settings.updateSource)) {
+        UpdateSource.FDROID -> checkFDroidUpdate(Application.application)
+        UpdateSource.GITHUB -> {
+            val track = UpdateTrack.fromString(Settings.updateTrack)
+            GitHubUpdateChecker().use { checker ->
+                checker.checkUpdate(track)
+            }
         }
-    }
-
-    override fun supportsSilentInstall(): Boolean {
-        return true
-    }
-
-    override fun supportsAutoUpdate(): Boolean {
-        return true
     }
 
     override fun scheduleAutoUpdate() {
@@ -125,8 +116,7 @@ object Vendor : VendorInterface {
     override suspend fun verifySilentInstallMethod(method: String): Boolean {
         return when (method) {
             "PACKAGE_INSTALLER" -> {
-                ApkInstaller.canSystemSilentInstall() &&
-                    Application.application.packageManager.canRequestPackageInstalls()
+                ApkInstaller.canSystemSilentInstall()
             }
             "SHIZUKU" -> {
                 if (!ShizukuInstaller.isAvailable()) {
@@ -138,22 +128,18 @@ object Vendor : VendorInterface {
                 }
                 true
             }
-            "ROOT" -> RootInstaller.checkAccess()
+            "ROOT" -> RootClient.checkRootAvailable()
             else -> false
         }
     }
 
-    override suspend fun downloadAndInstall(context: android.content.Context, downloadUrl: String): Result<Unit> {
-        return try {
-            val cachedApk = UpdateState.cachedApkFile.value
-            val apkFile = if (cachedApk != null && cachedApk.exists() && cachedApk.length() > 0) {
-                cachedApk
-            } else {
-                ApkDownloader().use { it.download(downloadUrl) }
-            }
-            ApkInstaller.install(context, apkFile)
-        } catch (e: Exception) {
-            Result.failure(e)
+    override suspend fun downloadAndInstall(context: android.content.Context, downloadUrl: String) {
+        val cachedApk = UpdateState.cachedApkFile.value
+        val apkFile = if (cachedApk != null && cachedApk.exists() && cachedApk.length() > 0) {
+            cachedApk
+        } else {
+            ApkDownloader().use { it.download(downloadUrl) }
         }
+        ApkInstaller.install(context, apkFile)
     }
 }

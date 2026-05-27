@@ -19,26 +19,18 @@ import kotlin.coroutines.suspendCoroutine
 object LocalResolver : LocalDNSTransport {
     private const val RCODE_NXDOMAIN = 3
 
-    override fun raw(): Boolean {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-    }
+    override fun raw(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
 
     @RequiresApi(Build.VERSION_CODES.Q)
-    override fun exchange(
-        ctx: ExchangeContext,
-        message: ByteArray,
-    ) {
+    override fun exchange(ctx: ExchangeContext, message: ByteArray) {
+        val defaultNetwork = DefaultNetworkMonitor.defaultNetwork ?: error("missing default interface")
         return runBlocking {
-            val defaultNetwork = DefaultNetworkMonitor.require()
             suspendCoroutine { continuation ->
                 val signal = CancellationSignal()
                 ctx.onCancel(signal::cancel)
                 val callback =
                     object : DnsResolver.Callback<ByteArray> {
-                        override fun onAnswer(
-                            answer: ByteArray,
-                            rcode: Int,
-                        ) {
+                        override fun onAnswer(answer: ByteArray, rcode: Int) {
                             if (rcode == 0) {
                                 ctx.rawSuccess(answer)
                             } else {
@@ -70,13 +62,9 @@ object LocalResolver : LocalDNSTransport {
         }
     }
 
-    override fun lookup(
-        ctx: ExchangeContext,
-        network: String,
-        domain: String,
-    ) {
+    override fun lookup(ctx: ExchangeContext, network: String, domain: String) {
+        val defaultNetwork = DefaultNetworkMonitor.defaultNetwork ?: error("missing default interface")
         return runBlocking {
-            val defaultNetwork = DefaultNetworkMonitor.require()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 suspendCoroutine { continuation ->
                     val signal = CancellationSignal()
@@ -84,10 +72,7 @@ object LocalResolver : LocalDNSTransport {
                     val callback =
                         object : DnsResolver.Callback<Collection<InetAddress>> {
                             @Suppress("ThrowableNotThrown")
-                            override fun onAnswer(
-                                answer: Collection<InetAddress>,
-                                rcode: Int,
-                            ) {
+                            override fun onAnswer(answer: Collection<InetAddress>, rcode: Int) {
                                 if (rcode == 0) {
                                     ctx.success(
                                         (answer as Collection<InetAddress?>).mapNotNull { it?.hostAddress }

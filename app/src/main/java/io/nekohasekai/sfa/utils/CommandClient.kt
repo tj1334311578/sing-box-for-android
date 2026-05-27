@@ -5,7 +5,7 @@ import go.Seq
 import io.nekohasekai.libbox.CommandClient
 import io.nekohasekai.libbox.CommandClientHandler
 import io.nekohasekai.libbox.CommandClientOptions
-import io.nekohasekai.libbox.Connections
+import io.nekohasekai.libbox.ConnectionEvents
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LogEntry
 import io.nekohasekai.libbox.LogIterator
@@ -15,10 +15,6 @@ import io.nekohasekai.libbox.StatusMessage
 import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.sfa.ktx.toList
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 
 open class CommandClient(
     private val scope: CoroutineScope,
@@ -51,10 +47,8 @@ open class CommandClient(
         }
     }
 
-    private fun getAllHandlers(): List<Handler> {
-        return synchronized(additionalHandlers) {
-            listOf(handler) + additionalHandlers
-        }
+    private fun getAllHandlers(): List<Handler> = synchronized(additionalHandlers) {
+        listOf(handler) + additionalHandlers
     }
 
     enum class ConnectionType {
@@ -62,6 +56,7 @@ open class CommandClient(
         Groups,
         Log,
         ClashMode,
+        Connections,
     }
 
     interface Handler {
@@ -79,12 +74,11 @@ open class CommandClient(
 
         fun updateGroups(newGroups: MutableList<OutboundGroup>) {}
 
-        fun initializeClashMode(
-            modeList: List<String>,
-            currentMode: String,
-        ) {}
+        fun initializeClashMode(modeList: List<String>, currentMode: String) {}
 
         fun updateClashMode(newMode: String) {}
+
+        fun writeConnectionEvents(events: ConnectionEvents) {}
     }
 
     private var commandClient: CommandClient? = null
@@ -100,32 +94,19 @@ open class CommandClient(
                     ConnectionType.Groups -> Libbox.CommandGroup
                     ConnectionType.Log -> Libbox.CommandLog
                     ConnectionType.ClashMode -> Libbox.CommandClashMode
+                    ConnectionType.Connections -> Libbox.CommandConnections
                 }
             options.addCommand(command)
         }
         options.statusInterval = 1 * 1000 * 1000 * 1000
         val commandClient = CommandClient(clientHandler, options)
-        scope.launch(Dispatchers.IO) {
-            for (i in 1..10) {
-                delay(100 + i.toLong() * 50)
-                try {
-                    commandClient.connect()
-                } catch (ignored: Exception) {
-                    continue
-                }
-                if (!isActive) {
-                    runCatching {
-                        commandClient.disconnect()
-                    }
-                    return@launch
-                }
-                this@CommandClient.commandClient = commandClient
-                return@launch
-            }
-            runCatching {
-                commandClient.disconnect()
-            }
+        try {
+            commandClient.connect()
+        } catch (e: Exception) {
+            Log.d("CommandClient", "connect failed", e)
+            return
         }
+        this.commandClient = commandClient
     }
 
     fun disconnect() {
@@ -133,7 +114,7 @@ open class CommandClient(
             runCatching {
                 disconnect()
             }
-            Seq.destroyRef(refnum)
+//            Seq.destroyRef(refnum)
         }
         commandClient = null
     }
@@ -181,10 +162,7 @@ open class CommandClient(
             getAllHandlers().forEach { it.updateStatus(message) }
         }
 
-        override fun initializeClashMode(
-            modeList: StringIterator,
-            currentMode: String,
-        ) {
+        override fun initializeClashMode(modeList: StringIterator, currentMode: String) {
             val modes = modeList.toList()
             getAllHandlers().forEach { it.initializeClashMode(modes, currentMode) }
         }
@@ -193,7 +171,9 @@ open class CommandClient(
             getAllHandlers().forEach { it.updateClashMode(newMode) }
         }
 
-        override fun writeConnections(message: Connections?) {
+        override fun writeConnectionEvents(events: ConnectionEvents?) {
+            if (events == null) return
+            getAllHandlers().forEach { it.writeConnectionEvents(events) }
         }
     }
 }

@@ -1,8 +1,8 @@
 package io.nekohasekai.sfa.compose.screen.dashboard
 
-import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import io.nekohasekai.sfa.compose.navigation.NewProfileArgs
 import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Profile
 import io.nekohasekai.sfa.utils.CommandClient
@@ -34,8 +34,7 @@ fun DashboardCardRenderer(
     onHideAddProfileSheet: () -> Unit = {},
     onShowProfilePickerSheet: () -> Unit = {},
     onHideProfilePickerSheet: () -> Unit = {},
-    shareQRCodeImage: (Bitmap, String) -> Unit = { _, _ -> },
-    saveQRCodeToGallery: (Bitmap, String) -> Unit = { _, _ -> },
+    onOpenNewProfile: (NewProfileArgs) -> Unit = {},
     commandClient: CommandClient? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -124,23 +123,8 @@ fun DashboardCardRenderer(
                 onHideAddProfileSheet = onHideAddProfileSheet,
                 onShowProfilePickerSheet = onShowProfilePickerSheet,
                 onHideProfilePickerSheet = onHideProfilePickerSheet,
-                onImportFromFile = { /* Handled in ProfilesCard */ },
-                onScanQrCode = { /* Handled in ProfilesCard */ },
-                onCreateManually = { /* Handled in ProfilesCard */ },
-                shareQRCodeImage = shareQRCodeImage,
-                saveQRCodeToGallery = saveQRCodeToGallery,
+                onOpenNewProfile = onOpenNewProfile,
             )
-        }
-
-        CardGroup.Groups -> {
-            if (uiState.hasGroups) {
-                GroupsCard(
-                    serviceStatus = serviceStatus,
-                    isCardMode = true,
-                    commandClient = commandClient,
-                    modifier = modifier,
-                )
-            }
         }
     }
 }
