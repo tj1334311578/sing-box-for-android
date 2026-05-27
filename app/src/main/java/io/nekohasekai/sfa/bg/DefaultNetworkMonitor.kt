@@ -4,10 +4,6 @@ import android.net.Network
 import android.os.Build
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.sfa.Application
-import io.nekohasekai.sfa.constant.Bugs
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
 import java.net.NetworkInterface
 
 object DefaultNetworkMonitor {
@@ -44,38 +40,26 @@ object DefaultNetworkMonitor {
         checkDefaultInterfaceUpdate(defaultNetwork)
     }
 
-    private fun checkDefaultInterfaceUpdate(
-        newNetwork: Network?
-    ) {
+    private fun checkDefaultInterfaceUpdate(newNetwork: Network?) {
         val listener = listener ?: return
         if (newNetwork != null) {
-            val interfaceName =
-                (Application.connectivity.getLinkProperties(newNetwork) ?: return).interfaceName
             for (times in 0 until 10) {
+                val linkProperties = Application.connectivity.getLinkProperties(newNetwork)
+                if (linkProperties == null) {
+                    Thread.sleep(100)
+                    continue
+                }
                 var interfaceIndex: Int
                 try {
-                    interfaceIndex = NetworkInterface.getByName(interfaceName).index
+                    interfaceIndex = NetworkInterface.getByName(linkProperties.interfaceName).index
                 } catch (e: Exception) {
                     Thread.sleep(100)
                     continue
                 }
-                if (Bugs.fixAndroidStack) {
-                    GlobalScope.launch(Dispatchers.IO) {
-                        listener.updateDefaultInterface(interfaceName, interfaceIndex, false, false)
-                    }
-                } else {
-                    listener.updateDefaultInterface(interfaceName, interfaceIndex, false, false)
-                }
+                listener.updateDefaultInterface(linkProperties.interfaceName, interfaceIndex, false, false)
             }
         } else {
-            if (Bugs.fixAndroidStack) {
-                GlobalScope.launch(Dispatchers.IO) {
-                    listener.updateDefaultInterface("", -1, false, false)
-                }
-            } else {
-                listener.updateDefaultInterface("", -1, false, false)
-            }
+            listener.updateDefaultInterface("", -1, false, false)
         }
     }
-
 }
